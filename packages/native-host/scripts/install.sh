@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_DIR="$(dirname "$SCRIPT_DIR")"
-HOST_NAME="sh.arya.web-browser-mcp"
+HOST_NAME="sh.arya.web_browser_mcp"
 
 # Detect OS
 OS="$(uname -s)"

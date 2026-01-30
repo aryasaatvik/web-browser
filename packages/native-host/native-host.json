@@ -1,5 +1,5 @@
 {
-  "name": "sh.arya.web-browser-mcp",
+  "name": "sh.arya.web_browser_mcp",
   "description": "Web Browser MCP Native Messaging Bridge",
   "path": "/usr/local/bin/web-browser-mcp",
   "type": "stdio",

@@ -9,7 +9,7 @@
 set -e
 
 # Configuration
-HOST_NAME="sh.arya.web-browser-mcp"
+HOST_NAME="sh.arya.web_browser_mcp"
 DEFAULT_EXTENSION_ID="*"  # Allow all extensions in dev mode
 
 # Colors
