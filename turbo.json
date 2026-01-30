@@ -12,11 +12,11 @@
       "cache": false,
       "persistent": true
     },
-    "//#test": {
-      "dependsOn": ["build"],
+    "test": {
+      "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
     },
-    "//#test:watch": {
+    "test:watch": {
       "cache": false,
       "persistent": true
     }
