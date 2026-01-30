@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turborepo.dev/schema.v2.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$", "!.wxt/**", "!.output/**", "!.turbo/**"],
+      "outputs": [".output/**"]
+    },
+    "typecheck": {
+      "inputs": ["$TURBO_DEFAULT$", "!.wxt/**", "!.output/**", "!.turbo/**"],
+      "outputs": []
+    }
+  }
+}
