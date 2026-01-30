@@ -1,0 +1,52 @@
+{
+  "name": "@web-browser/core",
+  "version": "0.1.0",
+  "description": "Shared browser automation logic for web-browser-mcp",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./selectors": {
+      "types": "./dist/selectors/index.d.ts",
+      "import": "./dist/selectors/index.js"
+    },
+    "./dom": {
+      "types": "./dist/dom/index.d.ts",
+      "import": "./dist/dom/index.js"
+    },
+    "./input": {
+      "types": "./dist/input/index.d.ts",
+      "import": "./dist/input/index.js"
+    },
+    "./a11y": {
+      "types": "./dist/a11y/index.d.ts",
+      "import": "./dist/a11y/index.js"
+    },
+    "./browser-bundle": {
+      "types": "./dist/browser-bundle-source.d.ts",
+      "import": "./dist/browser-bundle-source.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && bun run bundle",
+    "bundle": "bun scripts/bundle-for-browser.ts",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
+    "happy-dom": "^20.4.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
+  }
+}
