@@ -1,0 +1,34 @@
+{
+  "name": "@web-browser/native-host",
+  "version": "0.1.0",
+  "description": "MCP server and native messaging bridge for Web Browser MCP",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "web-browser-mcp": "./bin/web-browser-mcp.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.29",
+    "@web-browser/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.1.0",
+    "ai": "^6.0.58",
+    "ws": "^8.19.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.3.0"
+  }
+}
