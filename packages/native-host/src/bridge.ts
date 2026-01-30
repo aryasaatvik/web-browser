@@ -4,9 +4,11 @@
  * The bridge is spawned by Chrome via native messaging and acts as a connector:
  * Chrome Extension ↔ (native messaging stdio) ↔ Bridge ↔ (Unix socket) ↔ MCP Server
  *
- * The bridge simply forwards messages bidirectionally without processing them.
- * This allows the MCP server to handle MCP requests while the bridge handles the
- * native messaging protocol complexities.
+ * The bridge is resilient to MCP server availability:
+ * - Retries connection with exponential backoff
+ * - Reconnects automatically if MCP server restarts
+ * - Queues messages while disconnected
+ * - Stays alive as long as Chrome keeps the native messaging port open
  */
 
 import * as net from 'node:net';
@@ -17,6 +19,11 @@ import {
   writeNativeMessage,
   EndOfStreamError,
 } from './native-messaging.js';
+
+// Connection retry settings
+const INITIAL_RETRY_DELAY = 500; // ms
+const MAX_RETRY_DELAY = 10000; // ms
+const MAX_QUEUE_SIZE = 100;
 
 /**
  * Get the MCP server socket address.
@@ -39,9 +46,9 @@ function getMcpSocketAddress(): { type: 'unix'; path: string } | { type: 'tcp'; 
 }
 
 /**
- * Connect to the MCP server socket.
+ * Attempt to connect to the MCP server socket once.
  */
-async function connectToMcp(): Promise<net.Socket> {
+function tryConnect(): Promise<net.Socket> {
   const addr = getMcpSocketAddress();
 
   return new Promise((resolve, reject) => {
@@ -49,25 +56,26 @@ async function connectToMcp(): Promise<net.Socket> {
       ? net.createConnection(addr.path)
       : net.createConnection(addr.port, addr.host);
 
-    socket.once('error', (err) => {
-      reject(new Error(`Failed to connect to MCP server: ${err.message}`));
-    });
+    const onError = (err: Error): void => {
+      socket.removeListener('connect', onConnect);
+      reject(err);
+    };
 
-    socket.once('connect', () => {
+    const onConnect = (): void => {
+      socket.removeListener('error', onError);
       resolve(socket);
-    });
+    };
+
+    socket.once('error', onError);
+    socket.once('connect', onConnect);
   });
 }
 
 /**
  * Run the bridge process.
  *
- * This function:
- * 1. Connects to the MCP server socket
- * 2. Reads native messages from stdin (Chrome extension)
- * 3. Forwards them to the MCP server socket (newline-delimited JSON)
- * 4. Reads responses from MCP server socket
- * 5. Sends them back to Chrome via native messaging
+ * The bridge stays alive as long as Chrome keeps the native messaging connection open.
+ * It automatically connects/reconnects to the MCP server and queues messages while disconnected.
  */
 export async function runBridge(): Promise<void> {
   // Disable buffering on stdin/stdout for native messaging
@@ -75,26 +83,39 @@ export async function runBridge(): Promise<void> {
     process.stdin.setRawMode(true);
   }
 
-  let socket: net.Socket;
+  let socket: net.Socket | null = null;
+  let socketBuffer = '';
+  let connected = false;
+  let connecting = false;
+  let retryDelay = INITIAL_RETRY_DELAY;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const messageQueue: string[] = [];
 
-  try {
-    socket = await connectToMcp();
-  } catch (err) {
-    // Send error back to extension
-    writeNativeMessage({
-      type: 'error',
-      error: err instanceof Error ? err.message : String(err),
-    });
-    process.exit(1);
+  /**
+   * Send connection status to extension.
+   */
+  function sendStatus(status: 'connected' | 'disconnected' | 'connecting'): void {
+    writeNativeMessage({ type: 'bridge_status', status });
   }
 
-  let socketBuffer = '';
+  /**
+   * Flush queued messages to MCP server.
+   */
+  function flushQueue(): void {
+    if (!socket || !connected) return;
 
-  // Handle messages from MCP server socket
-  socket.on('data', (data) => {
+    while (messageQueue.length > 0) {
+      const msg = messageQueue.shift()!;
+      socket.write(msg);
+    }
+  }
+
+  /**
+   * Handle incoming data from MCP server.
+   */
+  function handleSocketData(data: Buffer): void {
     socketBuffer += data.toString();
 
-    // Process newline-delimited JSON messages
     while (socketBuffer.includes('\n')) {
       const idx = socketBuffer.indexOf('\n');
       const line = socketBuffer.slice(0, idx);
@@ -104,34 +125,103 @@ export async function runBridge(): Promise<void> {
 
       try {
         const message = JSON.parse(line);
-        // Forward to Chrome via native messaging
         writeNativeMessage(message);
       } catch {
         // Ignore parse errors
       }
     }
-  });
+  }
 
-  socket.on('close', () => {
-    // MCP server disconnected, exit bridge
-    process.exit(0);
-  });
+  /**
+   * Set up socket event handlers.
+   */
+  function setupSocket(sock: net.Socket): void {
+    sock.on('data', handleSocketData);
 
-  socket.on('error', (err) => {
-    writeNativeMessage({
-      type: 'error',
-      error: `MCP server socket error: ${err.message}`,
+    sock.on('close', () => {
+      if (socket === sock) {
+        socket = null;
+        connected = false;
+        socketBuffer = '';
+        sendStatus('disconnected');
+        scheduleReconnect();
+      }
     });
-    process.exit(1);
-  });
 
-  // Read native messages from Chrome and forward to MCP server
+    sock.on('error', () => {
+      // Error will trigger close event
+      sock.destroy();
+    });
+  }
+
+  /**
+   * Schedule a reconnection attempt.
+   */
+  function scheduleReconnect(): void {
+    if (retryTimer || connecting) return;
+
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      attemptConnect();
+    }, retryDelay);
+
+    // Exponential backoff
+    retryDelay = Math.min(retryDelay * 1.5, MAX_RETRY_DELAY);
+  }
+
+  /**
+   * Attempt to connect to MCP server.
+   */
+  async function attemptConnect(): Promise<void> {
+    if (connected || connecting) return;
+
+    connecting = true;
+    sendStatus('connecting');
+
+    try {
+      socket = await tryConnect();
+      connected = true;
+      connecting = false;
+      retryDelay = INITIAL_RETRY_DELAY; // Reset backoff on success
+      setupSocket(socket);
+      sendStatus('connected');
+      flushQueue();
+    } catch {
+      connecting = false;
+      sendStatus('disconnected');
+      scheduleReconnect();
+    }
+  }
+
+  /**
+   * Queue a message to send to MCP server.
+   */
+  function queueMessage(message: unknown): void {
+    const serialized = JSON.stringify(message) + '\n';
+
+    if (connected && socket) {
+      socket.write(serialized);
+    } else {
+      // Queue message for when we reconnect
+      if (messageQueue.length < MAX_QUEUE_SIZE) {
+        messageQueue.push(serialized);
+      }
+      // Trigger connection attempt if not already trying
+      if (!connecting && !retryTimer) {
+        attemptConnect();
+      }
+    }
+  }
+
+  // Start connection attempt immediately
+  attemptConnect();
+
+  // Read native messages from Chrome
   const reader = createNativeMessageReader(process.stdin);
 
   try {
     for await (const message of reader) {
-      // Forward to MCP server as newline-delimited JSON
-      socket.write(JSON.stringify(message) + '\n');
+      queueMessage(message);
     }
   } catch (err) {
     if (!(err instanceof EndOfStreamError)) {
@@ -142,7 +232,9 @@ export async function runBridge(): Promise<void> {
     }
   }
 
-  // Chrome disconnected
-  socket.destroy();
+  // Chrome disconnected - clean up and exit
+  if (retryTimer) clearTimeout(retryTimer);
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (socket) (socket as net.Socket).destroy();
   process.exit(0);
 }

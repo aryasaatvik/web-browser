@@ -988,8 +988,8 @@ export default defineBackground({
 
     // Native messaging setup
     native.onMessage(onNativeMessage);
-    native.onDisconnect(() => {
-      setTimeout(() => native.connect(), 1000);
+    native.onBridgeStatus((status) => {
+      console.log(`[background] Bridge status: ${status}`);
     });
     native.connect();
   },
