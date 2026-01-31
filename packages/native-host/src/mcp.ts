@@ -1,5 +1,5 @@
 /**
- * MCP server for Web Browser MCP.
+ * MCP server for Web Browser.
  *
  * The MCP server is the long-running process that:
  * 1. Runs an MCP server on stdio (for Claude Desktop/Claude Code)
@@ -33,7 +33,7 @@ function getMcpSocketPath(): string {
   }
 
   const user = process.env.USER || 'default';
-  return path.join(os.tmpdir(), `web-browser-mcp-${user}`);
+  return path.join(os.tmpdir(), `web-browser-${user}`);
 }
 
 /**
@@ -218,7 +218,7 @@ export async function runMcp(): Promise<void> {
   // Create MCP server
   const server = new Server(
     {
-      name: 'web-browser-mcp',
+      name: 'web-browser',
       version: '0.1.0',
     },
     {

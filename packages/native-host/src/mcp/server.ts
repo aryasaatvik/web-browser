@@ -38,7 +38,7 @@ export class MCPServer {
 
     this.server = new Server(
       {
-        name: options.name || 'web-browser-mcp',
+        name: options.name || 'web-browser',
         version: options.version || '0.1.0',
       },
       {

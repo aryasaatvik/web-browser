@@ -36,7 +36,7 @@ function getMcpSocketAddress(): { type: 'unix'; path: string } | { type: 'tcp'; 
   }
 
   const user = process.env.USER || 'default';
-  return { type: 'unix', path: path.join(os.tmpdir(), `web-browser-mcp-${user}`) };
+  return { type: 'unix', path: path.join(os.tmpdir(), `web-browser-${user}`) };
 }
 
 export class ExtensionBackend implements BrowserBackend {

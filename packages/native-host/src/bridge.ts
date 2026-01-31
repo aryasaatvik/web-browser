@@ -1,5 +1,5 @@
 /**
- * Bridge mode for Web Browser MCP.
+ * Bridge mode for Web Browser.
  *
  * The bridge is spawned by Chrome via native messaging and acts as a connector:
  * Chrome Extension ↔ (native messaging stdio) ↔ Bridge ↔ (Unix socket) ↔ MCP Server
@@ -42,7 +42,7 @@ function getMcpSocketAddress(): { type: 'unix'; path: string } | { type: 'tcp'; 
   }
 
   const user = process.env.USER || 'default';
-  return { type: 'unix', path: path.join(os.tmpdir(), `web-browser-mcp-${user}`) };
+  return { type: 'unix', path: path.join(os.tmpdir(), `web-browser-${user}`) };
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
- * @web-browser/native-host
+ * web-browser
  *
- * MCP server and native messaging bridge for Web Browser MCP.
+ * MCP server and native messaging bridge for Web Browser.
  */
 
 // MCP Server

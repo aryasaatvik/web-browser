@@ -99,7 +99,7 @@ export class WebSocketTransport {
       type: "connected",
       clientId,
       serverInfo: {
-        name: "web-browser-mcp",
+        name: "web-browser",
         version: "0.1.0",
       },
     });
