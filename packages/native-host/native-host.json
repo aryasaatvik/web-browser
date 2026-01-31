@@ -1,7 +1,7 @@
 {
-  "name": "sh.arya.web_browser_mcp",
+  "name": "sh.arya.web_browser",
   "description": "Web Browser MCP Native Messaging Bridge",
-  "path": "/usr/local/bin/web-browser-mcp",
+  "path": "/usr/local/bin/web-browser",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://EXTENSION_ID/"]
 }

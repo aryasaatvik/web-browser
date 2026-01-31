@@ -1,5 +1,5 @@
 {
-  "name": "web-browser-mcp",
+  "name": "web-browser",
   "version": "0.1.0",
   "description": "MCP server for browser automation via Chrome extension",
   "type": "module",
@@ -9,7 +9,7 @@
   "scripts": {
     "build": "turbo run build",
     "build:core": "turbo run build --filter=@web-browser/core",
-    "build:native-host": "turbo run build --filter=@web-browser/native-host",
+    "build:native-host": "turbo run build --filter=web-browser",
     "build:extension": "turbo run build --filter=@web-browser/extension",
     "dev": "turbo run dev",
     "dev:extension": "turbo run dev --filter=@web-browser/extension",

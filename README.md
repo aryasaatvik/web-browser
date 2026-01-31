@@ -1,4 +1,4 @@
-# web-browser-mcp
+# web-browser
 
 MCP (Model Context Protocol) server for browser automation via Chrome extension.
 
@@ -19,7 +19,7 @@ The default architecture uses an MCP server + bridge pattern for robust communic
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       MCP Server (`web-browser-mcp mcp`)                    │
+│                       MCP Server (`web-browser mcp`)                        │
 │                                                                             │
 │    Claude ──stdio──►  ┌─────────────────────────────┐                       │
 │                       │         Tool Execution      │                       │
@@ -35,7 +35,7 @@ The default architecture uses an MCP server + bridge pattern for robust communic
                        │                      │
                        ▼                      ▼
                  Chrome (CDP)            Bridge ◄──native msg──► Extension
-                 (WebSocket)       (`web-browser-mcp bridge`)
+                 (WebSocket)       (`web-browser bridge`)
 ```
 
 **Flow:**
@@ -49,7 +49,7 @@ The default architecture uses an MCP server + bridge pattern for robust communic
 For headless browsers or simpler use cases:
 
 ```
-MCP Client → web-browser-mcp --cdp-url → Chrome (--remote-debugging-port)
+MCP Client → web-browser --cdp-url → Chrome (--remote-debugging-port)
 ```
 
 ## Installation
@@ -98,16 +98,16 @@ bun run uninstall:native
 
 ```bash
 # Run as MCP server (default) - connects to Chrome extension via bridge
-web-browser-mcp
+web-browser
 
 # Explicit MCP server mode
-web-browser-mcp mcp
+web-browser mcp
 
 # Run as bridge (Chrome spawns this via native messaging)
-web-browser-mcp bridge
+web-browser bridge
 
 # Direct CDP mode (no extension needed, for headless browsers)
-web-browser-mcp --cdp-url ws://localhost:9222
+web-browser --cdp-url ws://localhost:9222
 ```
 
 ### Claude Desktop Configuration
@@ -118,7 +118,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 {
   "mcpServers": {
     "web-browser": {
-      "command": "web-browser-mcp"
+      "command": "web-browser"
     }
   }
 }
@@ -184,7 +184,7 @@ bun run build:extension
 ## Packages
 
 - **@web-browser/core**: Shared browser automation logic (selectors, DOM utils, a11y)
-- **@web-browser/native-host**: MCP server and native messaging bridge
+- **web-browser**: MCP server and native messaging bridge
 - **@web-browser/extension**: Chrome extension (WXT)
 
 ## Environment Variables

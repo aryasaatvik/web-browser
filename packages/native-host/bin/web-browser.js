@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * web-browser-mcp CLI entry point.
+ * web-browser CLI entry point.
  *
  * Usage:
- *   web-browser-mcp                    # Run MCP server (MCP on stdio + socket server)
- *   web-browser-mcp mcp                # Same as above, explicit
- *   web-browser-mcp bridge             # Run bridge mode (Chrome spawns this via native messaging)
- *   web-browser-mcp --backend cdp      # Direct CDP mode (no extension needed)
+ *   web-browser                    # Run MCP server (MCP on stdio + socket server)
+ *   web-browser mcp                # Same as above, explicit
+ *   web-browser bridge             # Run bridge mode (Chrome spawns this via native messaging)
+ *   web-browser --backend cdp      # Direct CDP mode (no extension needed)
  */
 
 import { runMcp } from '../dist/mcp.js';
@@ -17,10 +17,10 @@ import { CdpBackend } from '../dist/backends/cdp.js';
 
 function printHelp() {
   console.log(`
-web-browser-mcp - MCP server for browser automation
+ web-browser - MCP server for browser automation
 
 Usage:
-  web-browser-mcp [command] [options]
+   web-browser [command] [options]
 
 Commands:
   mcp                 Run as MCP server (default). Listens for MCP on stdio
@@ -46,13 +46,13 @@ Environment Variables:
 
 Examples:
   # Standard usage with Chrome extension
-  web-browser-mcp                           # Start MCP server for Claude Desktop/Code
+   web-browser                           # Start MCP server for Claude Desktop/Code
 
   # Direct CDP mode (no extension, limited functionality)
-  web-browser-mcp --cdp-url ws://localhost:9222
+   web-browser --cdp-url ws://localhost:9222
 
   # For Chrome native messaging manifest (internal use)
-  web-browser-mcp bridge
+   web-browser bridge
 `);
 }
 
@@ -92,7 +92,7 @@ async function main() {
       await runBridge();
       break;
 
-    case 'cdp':
+    case 'cdp': {
       // Direct CDP mode - use the old MCPServer with CdpBackend
       if (!cdpUrl) {
         console.error('Error: --cdp-url is required for CDP backend');
@@ -119,9 +119,10 @@ async function main() {
 
       await server.start();
       break;
+    }
 
     case 'mcp':
-    default:
+    default: {
       // Check if they accidentally passed --backend extension (which is now default mcp mode)
       if (backendType === 'cdp' && !cdpUrl) {
         console.error('Error: --cdp-url is required for CDP backend');
@@ -130,6 +131,7 @@ async function main() {
 
       await runMcp();
       break;
+    }
   }
 }
 

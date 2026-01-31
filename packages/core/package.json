@@ -1,7 +1,7 @@
 {
   "name": "@web-browser/core",
   "version": "0.1.0",
-  "description": "Shared browser automation logic for web-browser-mcp",
+  "description": "Shared browser automation logic for web-browser",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -1,12 +1,12 @@
 {
-  "name": "@web-browser/native-host",
+  "name": "web-browser",
   "version": "0.1.0",
-  "description": "MCP server and native messaging bridge for Web Browser MCP",
+  "description": "MCP server and native messaging bridge for web-browser",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "web-browser-mcp": "./bin/web-browser-mcp.js"
+    "web-browser": "./bin/web-browser.js"
   },
   "files": [
     "dist",
