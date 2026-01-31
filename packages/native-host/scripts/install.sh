@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Install web-browser-mcp native messaging bridge manifest
+# Install web-browser native messaging bridge manifest
 # This script installs the native messaging host for Chrome/Chromium browsers
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_DIR="$(dirname "$SCRIPT_DIR")"
-HOST_NAME="sh.arya.web_browser_mcp"
+HOST_NAME="sh.arya.web_browser"
 
 # Detect OS
 OS="$(uname -s)"
@@ -30,13 +30,13 @@ esac
 # Create target directory if it doesn't exist
 mkdir -p "$TARGET_DIR"
 
-# Get the path to the web-browser-mcp binary
-if command -v web-browser-mcp &> /dev/null; then
-  HOST_PATH="$(command -v web-browser-mcp)"
-elif [ -f "$PACKAGE_DIR/bin/web-browser-mcp.js" ]; then
-  HOST_PATH="$PACKAGE_DIR/bin/web-browser-mcp.js"
+# Get the path to the web-browser binary
+if command -v web-browser &> /dev/null; then
+  HOST_PATH="$(command -v web-browser)"
+elif [ -f "$PACKAGE_DIR/bin/web-browser.js" ]; then
+  HOST_PATH="$PACKAGE_DIR/bin/web-browser.js"
 else
-  echo "web-browser-mcp not found. Please install @web-browser/native-host first."
+  echo "web-browser not found. Please install web-browser first."
   exit 1
 fi
 

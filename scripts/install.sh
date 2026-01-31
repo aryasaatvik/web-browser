@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Install web-browser-mcp native messaging bridge for Chrome/Chromium browsers
+# Install web-browser native messaging bridge for Chrome/Chromium browsers
 #
 # Usage:
 #   ./scripts/install.sh [--extension-id <id>] [--uninstall]
@@ -9,7 +9,7 @@
 set -e
 
 # Configuration
-HOST_NAME="sh.arya.web_browser_mcp"
+HOST_NAME="sh.arya.web_browser"
 DEFAULT_EXTENSION_ID="*"  # Allow all extensions in dev mode
 
 # Colors
@@ -79,26 +79,26 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Set paths based on platform
 case "$PLATFORM" in
   macos)
-    INSTALL_DIR="$HOME/.web-browser-mcp"
+    INSTALL_DIR="$HOME/.web-browser"
     CHROME_MANIFEST_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
     CHROMIUM_MANIFEST_DIR="$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
     BRAVE_MANIFEST_DIR="$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
     EDGE_MANIFEST_DIR="$HOME/Library/Application Support/Microsoft Edge/NativeMessagingHosts"
     ;;
   linux)
-    INSTALL_DIR="$HOME/.web-browser-mcp"
+    INSTALL_DIR="$HOME/.web-browser"
     CHROME_MANIFEST_DIR="$HOME/.config/google-chrome/NativeMessagingHosts"
     CHROMIUM_MANIFEST_DIR="$HOME/.config/chromium/NativeMessagingHosts"
     BRAVE_MANIFEST_DIR="$HOME/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
     EDGE_MANIFEST_DIR="$HOME/.config/microsoft-edge/NativeMessagingHosts"
     ;;
   windows)
-    INSTALL_DIR="$USERPROFILE/.web-browser-mcp"
+    INSTALL_DIR="$USERPROFILE/.web-browser"
     # Windows uses registry, handled separately
     ;;
 esac
 
-HOST_PATH="$INSTALL_DIR/web-browser-mcp-bridge"
+HOST_PATH="$INSTALL_DIR/web-browser-bridge"
 MANIFEST_FILE="$HOST_NAME.json"
 
 # Uninstall function
@@ -145,7 +145,7 @@ cat > "$HOST_PATH" << EOF
 # Chrome spawns this via browser.runtime.connectNative()
 # This bridge connects Chrome's native messaging to the MCP server Unix socket
 
-exec node "$PROJECT_ROOT/packages/native-host/bin/web-browser-mcp.js" bridge
+exec node "$PROJECT_ROOT/packages/native-host/bin/web-browser.js" bridge
 EOF
 
 chmod +x "$HOST_PATH"
@@ -223,13 +223,13 @@ echo "     - Click 'Load unpacked'"
 echo "     - Select: $PROJECT_ROOT/packages/extension/.output/chrome-mv3"
 echo ""
 echo "  3. Start the MCP server (for Claude Desktop/Claude Code):"
-echo "     web-browser-mcp"
+  echo "     web-browser"
 echo ""
 echo "  4. Add to Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json):"
 echo '     {'
 echo '       "mcpServers": {'
-echo '         "web-browser-mcp": {'
-echo '           "command": "web-browser-mcp"'
+  echo '         "web-browser": {'
+  echo '           "command": "web-browser"'
 echo '         }'
 echo '       }'
 echo '     }'
