@@ -3,7 +3,6 @@
  */
 
 import { EventEmitter } from 'node:events';
-import type { Socket } from 'node:net';
 
 interface MockSocketOptions {
   autoConnect?: boolean;
@@ -12,107 +11,86 @@ interface MockSocketOptions {
 /**
  * Create a mock net.Socket for testing.
  */
-export function createMockSocket(options: MockSocketOptions = {}): Socket & {
-  _triggerConnect: () => void;
-  _triggerData: (data: Buffer | string) => void;
-  _triggerClose: () => void;
-  _triggerError: (err: Error) => void;
-  getWrittenData: () => Buffer[];
-  getAllWrittenData: () => Buffer;
-  isDestroyed: () => boolean;
-} {
-  const emitter = new EventEmitter();
-  const writtenData: Buffer[] = [];
-  let _destroyed = false;
+class MockSocket extends EventEmitter {
+  private writtenData: Buffer[] = [];
+  private destroyedFlag = false;
+  private autoConnect: boolean;
 
-  const socket = {
-    // EventEmitter methods
-    on: emitter.on.bind(emitter),
-    once: emitter.once.bind(emitter),
-    off: emitter.off.bind(emitter),
-    emit: emitter.emit.bind(emitter),
-    addListener: emitter.addListener.bind(emitter),
-    removeListener: emitter.removeListener.bind(emitter),
-    removeAllListeners: emitter.removeAllListeners.bind(emitter),
-    listeners: emitter.listeners.bind(emitter),
-    listenerCount: emitter.listenerCount.bind(emitter),
-    prependListener: emitter.prependListener.bind(emitter),
-    prependOnceListener: emitter.prependOnceListener.bind(emitter),
-    eventNames: emitter.eventNames.bind(emitter),
-    rawListeners: emitter.rawListeners.bind(emitter),
-    setMaxListeners: emitter.setMaxListeners.bind(emitter),
-    getMaxListeners: emitter.getMaxListeners.bind(emitter),
-    [Symbol.toStringTag]: 'MockSocket',
+  constructor(options: MockSocketOptions = {}) {
+    super();
+    this.autoConnect = options.autoConnect !== false;
+  }
 
-    // Socket methods
-    write(data: Buffer | string, encodingOrCallback?: BufferEncoding | ((err?: Error) => void), callback?: (err?: Error) => void): boolean {
-      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-      writtenData.push(buf);
-      const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
-      if (cb) {
-        setImmediate(() => cb());
-      }
-      return true;
-    },
+  write(
+    data: Buffer | string,
+    encodingOrCallback?: BufferEncoding | ((err?: Error) => void),
+    callback?: (err?: Error) => void
+  ): boolean {
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    this.writtenData.push(buf);
+    const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+    if (cb) {
+      setImmediate(() => cb());
+    }
+    return true;
+  }
 
-    destroy(): Socket {
-      _destroyed = true;
-      emitter.emit('close');
-      return socket as Socket;
-    },
+  destroy(): this {
+    this.destroyedFlag = true;
+    this.emit('close');
+    return this;
+  }
 
-    get destroyed(): boolean {
-      return _destroyed;
-    },
+  get destroyed(): boolean {
+    return this.destroyedFlag;
+  }
 
-    end(): Socket {
-      _destroyed = true;
-      emitter.emit('close');
-      return socket as Socket;
-    },
+  end(): this {
+    this.destroyedFlag = true;
+    this.emit('close');
+    return this;
+  }
 
-    connect(): Socket {
-      if (options.autoConnect !== false) {
-        setImmediate(() => emitter.emit('connect'));
-      }
-      return socket as Socket;
-    },
+  connect(): this {
+    if (this.autoConnect) {
+      setImmediate(() => this.emit('connect'));
+    }
+    return this;
+  }
 
-    // Test helpers
-    _triggerConnect: (): void => {
-      emitter.emit('connect');
-    },
+  _triggerConnect(): void {
+    this.emit('connect');
+  }
 
-    _triggerData: (data: Buffer | string): void => {
-      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-      emitter.emit('data', buf);
-    },
+  _triggerData(data: Buffer | string): void {
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    this.emit('data', buf);
+  }
 
-    _triggerClose: (): void => {
-      _destroyed = true;
-      emitter.emit('close');
-    },
+  _triggerClose(): void {
+    this.destroyedFlag = true;
+    this.emit('close');
+  }
 
-    _triggerError: (err: Error): void => {
-      emitter.emit('error', err);
-    },
+  _triggerError(err: Error): void {
+    this.emit('error', err);
+  }
 
-    getWrittenData: (): Buffer[] => [...writtenData],
+  getWrittenData(): Buffer[] {
+    return [...this.writtenData];
+  }
 
-    getAllWrittenData: (): Buffer => Buffer.concat(writtenData),
+  getAllWrittenData(): Buffer {
+    return Buffer.concat(this.writtenData);
+  }
 
-    isDestroyed: (): boolean => _destroyed,
-  };
+  isDestroyed(): boolean {
+    return this.destroyedFlag;
+  }
+}
 
-  return socket as unknown as Socket & {
-    _triggerConnect: () => void;
-    _triggerData: (data: Buffer | string) => void;
-    _triggerClose: () => void;
-    _triggerError: (err: Error) => void;
-    getWrittenData: () => Buffer[];
-    getAllWrittenData: () => Buffer;
-    isDestroyed: () => boolean;
-  };
+export function createMockSocket(options: MockSocketOptions = {}): MockSocket {
+  return new MockSocket(options);
 }
 
 /**
