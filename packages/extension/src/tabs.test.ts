@@ -65,8 +65,8 @@ describe('TabManager', () => {
       browser.tabs.group = vi.fn().mockResolvedValue(42);
 
       // Create tabs that will exist
-      const tab1 = browser.tabs._createTab({ id: 1 });
-      const tab2 = browser.tabs._createTab({ id: 2 });
+      const tab1 = globalThis.mockBrowser.tabs._createTab({ id: 1 });
+      const tab2 = globalThis.mockBrowser.tabs._createTab({ id: 2 });
 
       await manager.ensureGroup(1);
       await manager.ensureGroup(2);
@@ -86,7 +86,7 @@ describe('TabManager', () => {
       browser.tabs.group = vi.fn().mockResolvedValue(42);
 
       // Create the tab first so it exists
-      browser.tabs._createTab({ id: 123 });
+      globalThis.mockBrowser.tabs._createTab({ id: 123 });
 
       await manager.ensureGroup(123);
 
@@ -118,8 +118,8 @@ describe('TabManager', () => {
       const tab1 = await browser.tabs.create({ url: 'https://example1.com' });
       const tab2 = await browser.tabs.create({ url: 'https://example2.com' });
 
-      await manager.ensureGroup(tab1.id);
-      await manager.ensureGroup(tab2.id);
+      await manager.ensureGroup(tab1.id!);
+      await manager.ensureGroup(tab2.id!);
 
       const tabs = await manager.listTabs();
 
@@ -132,11 +132,11 @@ describe('TabManager', () => {
       const tab1 = await browser.tabs.create({ url: 'https://example1.com' });
       const tab2 = await browser.tabs.create({ url: 'https://example2.com' });
 
-      await manager.ensureGroup(tab1.id);
-      await manager.ensureGroup(tab2.id);
+      await manager.ensureGroup(tab1.id!);
+      await manager.ensureGroup(tab2.id!);
 
       // Close one tab
-      browser.tabs._removeTab(tab1.id);
+      globalThis.mockBrowser.tabs._removeTab(tab1.id!);
 
       const tabs = await manager.listTabs();
 

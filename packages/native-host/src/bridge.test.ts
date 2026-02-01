@@ -40,10 +40,10 @@ describe('Bridge configuration', () => {
     it('should use default Unix socket path', () => {
       delete process.env.WEB_BROWSER_MCP_SOCKET;
       const user = process.env.USER || 'default';
-      const expectedPath = path.join(os.tmpdir(), `web-browser-mcp-${user}`);
+      const expectedPath = path.join(os.tmpdir(), `web-browser-${user}`);
 
       // This tests the expected path format
-      expect(expectedPath).toContain('web-browser-mcp-');
+      expect(expectedPath).toContain('web-browser-');
     });
 
     it('should use TCP on Windows', () => {

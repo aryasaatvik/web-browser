@@ -22,7 +22,7 @@ describe('NativeClient', () => {
     it('should connect to native host', () => {
       client.connect();
 
-      expect(browser.runtime.connectNative).toHaveBeenCalledWith('sh.arya.web_browser_mcp');
+      expect(browser.runtime.connectNative).toHaveBeenCalledWith('sh.arya.web_browser');
       expect(client.isConnected()).toBe(true);
     });
 

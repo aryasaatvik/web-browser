@@ -499,9 +499,9 @@ describe('MCP socket path', () => {
     const tmpdir = require('node:os').tmpdir();
     const path = require('node:path');
 
-    const socketPath = path.join(tmpdir, `web-browser-mcp-${user}`);
+    const socketPath = path.join(tmpdir, `web-browser-${user}`);
 
-    expect(socketPath).toContain('web-browser-mcp-');
+    expect(socketPath).toContain('web-browser-');
     expect(socketPath).toContain(user);
   });
 

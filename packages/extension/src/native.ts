@@ -9,7 +9,7 @@
 
 import type { Browser } from "wxt/browser";
 
-const NATIVE_HOST_NAME = "sh.arya.web_browser_mcp";
+const NATIVE_HOST_NAME = "sh.arya.web_browser";
 
 type MessageHandler = (message: unknown) => void;
 type DisconnectHandler = () => void;
