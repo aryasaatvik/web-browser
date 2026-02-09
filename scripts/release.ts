@@ -123,9 +123,19 @@ async function main() {
     return;
   }
 
-  // Commit + tag.
+  // Commit (if needed) + tag.
+  //
+  // For the first release, it is common for the repo to already have the desired
+  // package.json version (e.g. 0.1.0) without any diff. In that case, we skip
+  // creating a no-op commit and just tag HEAD.
   await $`git add ${filesToAdd}`;
-  await $`git commit -m ${`release(${pkg}): v${nextVersion}`}`;
+  const staged = (await $`git diff --cached --name-only`.text())
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (staged.length > 0) {
+    await $`git commit -m ${`release(${pkg}): v${nextVersion}`}`;
+  }
   await $`git tag ${tag}`;
 
   // Push if origin exists.
