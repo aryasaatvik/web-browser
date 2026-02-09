@@ -13,6 +13,7 @@
 import { runDaemon, BridgeBackend } from '../dist/daemon.js';
 import { runBridge } from '../dist/bridge.js';
 import { CdpBackend } from '../dist/backends/cdp.js';
+import { installNative, uninstallNative, OFFICIAL_EXTENSION_ID } from '../dist/installer.js';
 
 function printHelp() {
   console.log(`
@@ -29,6 +30,11 @@ Commands:
   bridge              Run as native messaging bridge. Chrome spawns this process
                       via browser.runtime.connectNative(). Bridges between
                       Chrome's native messaging (stdio) and the daemon socket.
+
+  install-native      Install Chrome native messaging host manifest (macOS + Chrome).
+                      Uses a deterministic official extension ID by default.
+
+  uninstall-native    Uninstall Chrome native messaging host manifest (macOS + Chrome).
 
 Options:
   --backend cdp       Use direct CDP backend instead of extension.
@@ -49,6 +55,12 @@ Environment Variables:
 Examples:
   # Standard usage with Chrome extension + Streamable HTTP clients
    web-browser                           # Start MCP daemon on http://127.0.0.1:49321/mcp
+
+  # Install native host (default official extension id)
+   web-browser install-native
+
+  # Install native host with an explicit extension id override
+   web-browser install-native --extension-id <id>
 
   # Direct CDP mode (no extension, limited functionality)
    web-browser --cdp-url http://127.0.0.1:9222
@@ -71,11 +83,12 @@ async function main() {
   let command = 'daemon'; // default
   let cdpUrl = undefined;
   let backendType = 'extension';
+  let extensionId = undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
-    if (arg === 'daemon' || arg === 'bridge' || arg === 'mcp') {
+    if (arg === 'daemon' || arg === 'bridge' || arg === 'mcp' || arg === 'install-native' || arg === 'uninstall-native') {
       command = arg;
     } else if (arg === '--backend' && args[i + 1]) {
       backendType = args[i + 1];
@@ -85,6 +98,9 @@ async function main() {
       backendType = 'cdp';
       command = 'cdp';
       i++;
+    } else if (arg === '--extension-id' && args[i + 1]) {
+      extensionId = args[i + 1];
+      i++;
     }
   }
 
@@ -93,6 +109,19 @@ async function main() {
     case 'bridge':
       await runBridge();
       break;
+
+    case 'install-native': {
+      await installNative({ extensionId });
+      console.log('Installed native messaging host.');
+      console.log(`Allowed origin: chrome-extension://${extensionId || OFFICIAL_EXTENSION_ID}/`);
+      break;
+    }
+
+    case 'uninstall-native': {
+      await uninstallNative();
+      console.log('Uninstalled native messaging host.');
+      break;
+    }
 
     case 'cdp': {
       // Direct CDP mode - run daemon with CdpBackend

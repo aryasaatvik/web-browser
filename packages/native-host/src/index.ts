@@ -12,6 +12,7 @@ export type { BrowserBackend, BackendName } from './backends/types.js';
 // MCP Daemon and Bridge
 export { runDaemon, BridgeBackend } from './daemon.js';
 export { runBridge } from './bridge.js';
+export { installNative, uninstallNative, OFFICIAL_EXTENSION_ID } from './installer.js';
 
 // Native messaging protocol utilities
 export {
