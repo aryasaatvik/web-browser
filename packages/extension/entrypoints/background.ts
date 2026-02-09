@@ -11,6 +11,7 @@ import { tabs } from "../src/tabs";
 interface Command {
   id: string;
   action: string;
+  sessionId?: string;
   [key: string]: unknown;
 }
 
@@ -34,7 +35,55 @@ interface CoreBridgeResult {
 }
 
 // Current active tab for commands
-let activeTabId: number | null = null;
+const activeTabIdBySession = new Map<string, number>();
+
+function getSessionId(cmd: Command): string {
+  const raw = cmd.sessionId;
+  if (typeof raw === "string" && raw.trim()) return raw;
+  return "default";
+}
+
+interface ConsoleMessage {
+  level: "log" | "warning" | "error" | "info" | "debug";
+  text: string;
+  timestamp: number;
+  url?: string;
+  lineNumber?: number;
+}
+
+interface NetworkRequest {
+  requestId: string;
+  url: string;
+  method: string;
+  status?: number;
+  statusText?: string;
+  type?: string;
+  timestamp: number;
+  responseTimestamp?: number;
+}
+
+const MAX_CONSOLE_MESSAGES = 500;
+const MAX_NETWORK_REQUESTS = 500;
+const consoleMessagesByTab = new Map<number, ConsoleMessage[]>();
+const networkRequestsByTab = new Map<number, NetworkRequest[]>();
+const monitoringEnabledTabs = new Set<number>();
+
+function pushBounded<T>(arr: T[], item: T, max: number): void {
+  arr.push(item);
+  if (arr.length > max) arr.splice(0, arr.length - max);
+}
+
+async function ensureMonitoring(tabId: number): Promise<void> {
+  if (monitoringEnabledTabs.has(tabId)) return;
+
+  // Enable domains that power console/network tooling.
+  await cdp.sendCommand(tabId, "Log.enable");
+  await cdp.sendCommand(tabId, "Network.enable");
+  // Runtime events are sometimes needed to capture console output depending on browser behavior.
+  await cdp.sendCommand(tabId, "Runtime.enable");
+
+  monitoringEnabledTabs.add(tabId);
+}
 
 // Response helpers
 function success<T>(id: string, data: T): Response<T> {
@@ -77,46 +126,56 @@ async function callCoreBridge<T extends CoreBridgeResult>(
 }
 
 // Get or create the active managed tab
-async function ensureActiveTab(): Promise<number> {
-  if (activeTabId !== null) {
-    if (await tabs.isManaged(activeTabId)) {
-      return activeTabId;
+async function ensureActiveTab(sessionId: string): Promise<number> {
+  const existingActive = activeTabIdBySession.get(sessionId);
+  if (typeof existingActive === "number") {
+    if (await tabs.isManaged(sessionId, existingActive)) {
+      return existingActive;
     }
-    activeTabId = null;
+    activeTabIdBySession.delete(sessionId);
   }
 
-  // Check existing managed tabs
-  const managedTabs = await tabs.listTabs();
+  // Check existing managed tabs for this session.
+  const managedTabs = await tabs.listTabs(sessionId);
   if (managedTabs.length > 0 && managedTabs[0].id) {
     const tabId = managedTabs[0].id;
-    activeTabId = tabId;
+    activeTabIdBySession.set(sessionId, tabId);
     return tabId;
   }
 
-  // Create new tab
-  const tab = await tabs.createTab();
+  // Create new tab (and ensure tab group).
+  const tab = await tabs.createTab(sessionId);
   if (!tab.id) throw new Error("Failed to create tab");
-  const newTabId = tab.id;
-  activeTabId = newTabId;
-  return newTabId;
+  activeTabIdBySession.set(sessionId, tab.id);
+  return tab.id;
 }
 
 // Wait for tab to finish loading
-async function waitForTabLoad(tabId: number): Promise<void> {
-  return new Promise((resolve) => {
+async function waitForTabLoad(tabId: number, timeoutMs: number = 30000): Promise<void> {
+  const existing = await browser.tabs.get(tabId);
+  if (existing.status === "complete") return;
+
+  return new Promise((resolve, reject) => {
     const listener = (id: number, info: { status?: string }) => {
       if (id === tabId && info.status === "complete") {
         browser.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timeout);
         resolve();
       }
     };
     browser.tabs.onUpdated.addListener(listener);
+
+    const timeout = setTimeout(() => {
+      browser.tabs.onUpdated.removeListener(listener);
+      reject(new Error(`Timed out waiting for tab ${tabId} to load`));
+    }, timeoutMs);
   });
 }
 
 // Command handlers
 async function handleNavigate(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const url = cmd.url as string;
 
   await browser.tabs.update(tabId, { url });
@@ -127,7 +186,8 @@ async function handleNavigate(cmd: Command): Promise<Response> {
 }
 
 async function handleClick(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   let x = cmd.x as number | undefined;
   let y = cmd.y as number | undefined;
 
@@ -169,7 +229,8 @@ async function handleClick(cmd: Command): Promise<Response> {
 }
 
 async function handleType(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const text = cmd.text as string;
 
   // If ref is provided, click to focus first
@@ -206,7 +267,8 @@ async function handleType(cmd: Command): Promise<Response> {
 }
 
 async function handleKeyboard(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const key = cmd.key as string;
 
   // Get proper key definition from core (supports 200+ keys)
@@ -254,7 +316,8 @@ async function handleKeyboard(cmd: Command): Promise<Response> {
 }
 
 async function handleScreenshot(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const format = (cmd.format as string) || "png";
   const quality = cmd.quality as number | undefined;
 
@@ -271,7 +334,8 @@ async function handleScreenshot(cmd: Command): Promise<Response> {
 }
 
 async function handleSnapshot(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   const result = await callCoreBridge<{
     success: boolean;
@@ -292,7 +356,8 @@ async function handleSnapshot(cmd: Command): Promise<Response> {
 }
 
 async function handleEvaluate(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const script = cmd.script as string;
 
   const result = await cdp.sendCommand<{
@@ -312,7 +377,8 @@ async function handleEvaluate(cmd: Command): Promise<Response> {
 }
 
 async function handleTabList(cmd: Command): Promise<Response> {
-  const managedTabs = await tabs.listTabs();
+  const sessionId = getSessionId(cmd);
+  const managedTabs = await tabs.listTabs(sessionId);
   const tabInfos = managedTabs.map((tab, index) => ({
     index,
     id: tab.id,
@@ -321,33 +387,57 @@ async function handleTabList(cmd: Command): Promise<Response> {
     active: tab.active,
   }));
 
-  return success(cmd.id, { tabs: tabInfos, active: activeTabId });
+  return success(cmd.id, { tabs: tabInfos, active: activeTabIdBySession.get(sessionId) });
 }
 
 async function handleTabNew(cmd: Command): Promise<Response> {
+  const sessionId = getSessionId(cmd);
   const url = cmd.url as string | undefined;
-  const tab = await tabs.createTab(url);
-  activeTabId = tab.id || null;
+  const tab = await tabs.createTab(sessionId, url);
+  if (typeof tab.id === "number") {
+    activeTabIdBySession.set(sessionId, tab.id);
+  }
 
   return success(cmd.id, { tabId: tab.id, url: tab.url });
 }
 
 async function handleTabClose(cmd: Command): Promise<Response> {
-  const tabId = (cmd.tabId as number) || activeTabId;
-  if (tabId === null) {
+  const sessionId = getSessionId(cmd);
+  const tabId = (cmd.tabId as number) || activeTabIdBySession.get(sessionId);
+  if (typeof tabId !== "number") {
     return failure(cmd.id, "No tab to close");
   }
 
-  await tabs.closeTab(tabId);
-  if (activeTabId === tabId) {
-    activeTabId = null;
-  }
+  await tabs.closeTab(sessionId, tabId);
+  if (activeTabIdBySession.get(sessionId) === tabId) activeTabIdBySession.delete(sessionId);
 
   return success(cmd.id, { closed: tabId });
 }
 
+async function handleTabSwitch(cmd: Command): Promise<Response> {
+  const sessionId = getSessionId(cmd);
+  const raw = cmd.tabId as unknown;
+  const tabId = typeof raw === "string" ? Number.parseInt(raw, 10) : (raw as number);
+
+  if (!Number.isFinite(tabId)) {
+    return failure(cmd.id, "tabId is required");
+  }
+
+  // Make this tab the active managed tab.
+  await browser.tabs.update(tabId, { active: true });
+  await tabs.ensureGroup(sessionId, tabId);
+  activeTabIdBySession.set(sessionId, tabId);
+
+  // Enable monitoring for this tab (console/network tooling).
+  await ensureMonitoring(tabId);
+
+  const tab = await browser.tabs.get(tabId);
+  return success(cmd.id, { tabId, url: tab.url, title: tab.title });
+}
+
 async function handleScroll(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const deltaX = (cmd.deltaX as number) || 0;
   const deltaY = (cmd.deltaY as number) || 0;
   const x = (cmd.x as number) || 0;
@@ -362,6 +452,65 @@ async function handleScroll(cmd: Command): Promise<Response> {
   });
 
   return success(cmd.id, { scrolled: true });
+}
+
+async function handleResizeViewport(cmd: Command): Promise<Response> {
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
+  const width = cmd.width as number;
+  const height = cmd.height as number;
+
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    return failure(cmd.id, "width and height are required");
+  }
+
+  await cdp.sendCommand(tabId, "Emulation.setDeviceMetricsOverride", {
+    width,
+    height,
+    deviceScaleFactor: (cmd.deviceScaleFactor as number) || 1,
+    mobile: (cmd.mobile as boolean) || false,
+  });
+
+  return success(cmd.id, { resized: true, width, height });
+}
+
+async function handleConsoleGet(cmd: Command): Promise<Response> {
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
+  await ensureMonitoring(tabId);
+
+  const level = cmd.level as ConsoleMessage["level"] | undefined;
+  const limit = cmd.limit as number | undefined;
+  const clear = cmd.clear as boolean | undefined;
+
+  let messages = [...(consoleMessagesByTab.get(tabId) || [])];
+  if (level) messages = messages.filter((m) => m.level === level);
+  if (limit && limit > 0) messages = messages.slice(-limit);
+
+  if (clear) consoleMessagesByTab.set(tabId, []);
+
+  return success(cmd.id, { messages, count: messages.length });
+}
+
+async function handleNetworkGet(cmd: Command): Promise<Response> {
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
+  await ensureMonitoring(tabId);
+
+  const urlPattern = cmd.urlPattern as string | undefined;
+  const limit = cmd.limit as number | undefined;
+  const clear = cmd.clear as boolean | undefined;
+
+  let requests = [...(networkRequestsByTab.get(tabId) || [])];
+  if (urlPattern) {
+    const regex = new RegExp(urlPattern);
+    requests = requests.filter((r) => regex.test(r.url));
+  }
+  if (limit && limit > 0) requests = requests.slice(-limit);
+
+  if (clear) networkRequestsByTab.set(tabId, []);
+
+  return success(cmd.id, { requests, count: requests.length });
 }
 
 // Cookie handlers
@@ -409,16 +558,43 @@ async function handleCookiesSet(cmd: Command): Promise<Response> {
 }
 
 async function handleCookiesRemove(cmd: Command): Promise<Response> {
-  const url = cmd.url as string;
   const name = cmd.name as string;
+
+  if (!name) {
+    return failure(cmd.id, "Cookie name is required");
+  }
+
+  // Chrome requires a URL when removing cookies. If not provided, infer one.
+  let url = cmd.url as string | undefined;
+  if (!url) {
+    const domain = cmd.domain as string | undefined;
+    if (domain) {
+      url = `https://${domain}/`;
+    } else {
+      const sessionId = getSessionId(cmd);
+      const tabId = await ensureActiveTab(sessionId);
+      const tab = await browser.tabs.get(tabId);
+      url = tab.url || undefined;
+    }
+  }
+
+  if (!url) {
+    return failure(cmd.id, "Cookie delete requires a url, a domain, or an active tab with a URL");
+  }
 
   await browser.cookies.remove({ url, name });
   return success(cmd.id, { removed: true, name, url });
 }
 
+async function handleCookiesDelete(cmd: Command): Promise<Response> {
+  // Alias for MCP tool naming consistency.
+  return handleCookiesRemove(cmd);
+}
+
 // Storage handlers
 async function handleStorageGet(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const type = (cmd.type as "local" | "session") || "local";
   const key = cmd.key as string | undefined;
 
@@ -437,7 +613,8 @@ async function handleStorageGet(cmd: Command): Promise<Response> {
 }
 
 async function handleStorageSet(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const type = (cmd.type as "local" | "session") || "local";
   const key = cmd.key as string;
   const value = cmd.value as string;
@@ -451,7 +628,8 @@ async function handleStorageSet(cmd: Command): Promise<Response> {
 }
 
 async function handleStorageRemove(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const type = (cmd.type as "local" | "session") || "local";
   const key = cmd.key as string;
 
@@ -464,7 +642,8 @@ async function handleStorageRemove(cmd: Command): Promise<Response> {
 }
 
 async function handleStorageClear(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const type = (cmd.type as "local" | "session") || "local";
 
   const storageType = type === "session" ? "sessionStorage" : "localStorage";
@@ -508,7 +687,8 @@ async function ensureOffscreenDocument(): Promise<void> {
 }
 
 async function handleRecordingStart(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   // Get stream ID for tab capture using Chrome API with type assertion
   const tabCapture = (globalThis as unknown as {
@@ -581,7 +761,8 @@ async function handleGifStart(cmd: Command): Promise<Response> {
 }
 
 async function handleGifAddFrame(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   // Capture screenshot
   const screenshot = await cdp.sendCommand<{ data: string }>(
@@ -619,7 +800,8 @@ async function handleGifGenerate(cmd: Command): Promise<Response> {
 
 // Page text handler - returns plain text content
 async function handlePageText(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   const result = await callCoreBridge<{ success: boolean; text: string }>(
     tabId,
@@ -632,7 +814,8 @@ async function handlePageText(cmd: Command): Promise<Response> {
 
 // Form fill handler - sets value of a form field
 async function handleFill(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const ref = cmd.ref as string;
   const value = cmd.value as string;
 
@@ -655,7 +838,8 @@ async function handleFill(cmd: Command): Promise<Response> {
 
 // Double click handler
 async function handleDblClick(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   let x = cmd.x as number | undefined;
   let y = cmd.y as number | undefined;
 
@@ -696,7 +880,8 @@ async function handleDblClick(cmd: Command): Promise<Response> {
 
 // GIF export handler - combines start, add frames, and generate
 async function handleGifExport(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
   const duration = (cmd.duration as number) || 3; // seconds
   const frameInterval = (cmd.frameInterval as number) || 100; // ms
   const width = (cmd.width as number) || 800;
@@ -756,7 +941,8 @@ async function handleGifExport(cmd: Command): Promise<Response> {
 
 // DOM stability handler - wait for element to stop moving/resizing
 async function handleWaitForStable(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   const result = await callCoreBridge<{
     success: boolean;
@@ -778,7 +964,8 @@ async function handleWaitForStable(cmd: Command): Promise<Response> {
 
 // Hit target check - verify click point will hit expected element
 async function handleCheckHitTarget(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   const result = await callCoreBridge<{
     success: boolean;
@@ -805,7 +992,8 @@ async function handleCheckHitTarget(cmd: Command): Promise<Response> {
 
 // Describe element - get human-readable description
 async function handleDescribeElement(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   const result = await callCoreBridge<{
     success: boolean;
@@ -824,7 +1012,8 @@ async function handleDescribeElement(cmd: Command): Promise<Response> {
 
 // Selector query handler - Playwright-style selectors
 async function handleQuerySelector(cmd: Command): Promise<Response> {
-  const tabId = await ensureActiveTab();
+  const sessionId = getSessionId(cmd);
+  const tabId = await ensureActiveTab(sessionId);
 
   const result = await callCoreBridge<{
     success: boolean;
@@ -871,13 +1060,23 @@ async function handleCommand(cmd: Command): Promise<Response> {
         return await handleTabNew(cmd);
       case "tab_close":
         return await handleTabClose(cmd);
+      case "tab_switch":
+        return await handleTabSwitch(cmd);
       case "scroll":
         return await handleScroll(cmd);
+      case "resize_viewport":
+        return await handleResizeViewport(cmd);
+      case "console_get":
+        return await handleConsoleGet(cmd);
+      case "network_get":
+        return await handleNetworkGet(cmd);
       // Cookie commands
       case "cookies_get":
         return await handleCookiesGet(cmd);
       case "cookies_set":
         return await handleCookiesSet(cmd);
+      case "cookies_delete":
+        return await handleCookiesDelete(cmd);
       case "cookies_remove":
         return await handleCookiesRemove(cmd);
       // Storage commands
@@ -968,9 +1167,12 @@ export default defineBackground({
     // Event listeners - must be inside main() to avoid running during WXT prepare
     browser.tabs.onRemoved.addListener((tabId) => {
       tabs.removeTab(tabId);
-      if (activeTabId === tabId) {
-        activeTabId = null;
+      for (const [sessionId, active] of activeTabIdBySession.entries()) {
+        if (active === tabId) activeTabIdBySession.delete(sessionId);
       }
+      consoleMessagesByTab.delete(tabId);
+      networkRequestsByTab.delete(tabId);
+      monitoringEnabledTabs.delete(tabId);
       cdp.detach(tabId).catch(() => {});
     });
 
@@ -980,8 +1182,118 @@ export default defineBackground({
       });
     }
 
+    browser.debugger.onEvent.addListener((source, method, params) => {
+      const tabId = source.tabId;
+      if (!tabId) return;
+
+      if (method === "Log.entryAdded") {
+        const entry = (params as { entry?: { level?: string; text?: string; timestamp?: number; url?: string; lineNumber?: number } }).entry;
+        if (!entry) return;
+
+        const levelMap: Record<string, ConsoleMessage["level"]> = {
+          verbose: "debug",
+          info: "info",
+          warning: "warning",
+          error: "error",
+        };
+
+        const list = consoleMessagesByTab.get(tabId) || [];
+        pushBounded(
+          list,
+          {
+            level: levelMap[entry.level || "info"] || "log",
+            text: entry.text || "",
+            timestamp: (entry.timestamp as number | undefined) || Date.now(),
+            url: entry.url,
+            lineNumber: entry.lineNumber,
+          },
+          MAX_CONSOLE_MESSAGES
+        );
+        consoleMessagesByTab.set(tabId, list);
+        return;
+      }
+
+      if (method === "Runtime.consoleAPICalled") {
+        const p = params as {
+          type?: string;
+          args?: Array<{ value?: unknown; description?: string }>;
+          timestamp?: number;
+        };
+
+        const apiType = p.type || "log";
+        const level = apiType === "warn" ? "warning" : apiType === "debug" ? "debug" : apiType === "error" ? "error" : apiType === "info" ? "info" : "log";
+        const text = (p.args || [])
+          .map((a) => {
+            if ("value" in a && a.value !== undefined) return String(a.value);
+            if (a.description) return a.description;
+            return "";
+          })
+          .filter(Boolean)
+          .join(" ");
+
+        const list = consoleMessagesByTab.get(tabId) || [];
+        pushBounded(
+          list,
+          {
+            level,
+            text,
+            timestamp: (p.timestamp as number | undefined) || Date.now(),
+          },
+          MAX_CONSOLE_MESSAGES
+        );
+        consoleMessagesByTab.set(tabId, list);
+        return;
+      }
+
+      if (method === "Network.requestWillBeSent") {
+        const p = params as {
+          requestId?: string;
+          request?: { url?: string; method?: string };
+          type?: string;
+          timestamp?: number;
+        };
+        if (!p.requestId || !p.request) return;
+
+        const list = networkRequestsByTab.get(tabId) || [];
+        pushBounded(
+          list,
+          {
+            requestId: p.requestId,
+            url: p.request.url || "",
+            method: p.request.method || "GET",
+            type: p.type,
+            timestamp: (p.timestamp as number | undefined) || Date.now(),
+          },
+          MAX_NETWORK_REQUESTS
+        );
+        networkRequestsByTab.set(tabId, list);
+        return;
+      }
+
+      if (method === "Network.responseReceived") {
+        const p = params as {
+          requestId?: string;
+          response?: { status?: number; statusText?: string };
+          timestamp?: number;
+        };
+        if (!p.requestId || !p.response) return;
+
+        const list = networkRequestsByTab.get(tabId) || [];
+        const req = list.find((r) => r.requestId === p.requestId);
+        if (req) {
+          req.status = p.response.status;
+          req.statusText = p.response.statusText;
+          req.responseTimestamp = (p.timestamp as number | undefined) || Date.now();
+        }
+        networkRequestsByTab.set(tabId, list);
+      }
+    });
+
     browser.debugger.onDetach.addListener((source) => {
       if (source.tabId) {
+        consoleMessagesByTab.delete(source.tabId);
+        networkRequestsByTab.delete(source.tabId);
+        monitoringEnabledTabs.delete(source.tabId);
         cdp.detach(source.tabId).catch(() => {});
       }
     });

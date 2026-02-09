@@ -86,6 +86,14 @@ export interface MockBrowserAPI {
     get: Mock;
     query: Mock;
   };
+  storage: {
+    local: {
+      get: Mock;
+      set: Mock;
+      remove: Mock;
+      _store: Map<string, unknown>;
+    };
+  };
   debugger: MockDebugger;
   cookies: {
     get: Mock;
@@ -113,6 +121,9 @@ export function createMockBrowserAPI(): MockBrowserAPI {
   let lastError: { message: string } | undefined;
   const tabs = new Map<number, MockTab>();
   let nextTabId = 1;
+  const groups = new Map<number, { id: number; title?: string; color?: string; collapsed?: boolean }>();
+  let nextGroupId = 1;
+  const storageLocal = new Map<string, unknown>();
 
   function createMockPort(name: string): MockPort {
     const messageListeners = new Set<(message: unknown) => void>();
@@ -242,9 +253,28 @@ export function createMockBrowserAPI(): MockBrowserAPI {
         }
         return tab;
       }),
-      group: vi.fn(async () => 1),
+      group: vi.fn(async (opts: { tabIds: number | number[]; groupId?: number }) => {
+        const tabIds = Array.isArray(opts.tabIds) ? opts.tabIds : [opts.tabIds];
+        const groupId = typeof opts.groupId === 'number' ? opts.groupId : nextGroupId++;
+
+        if (!groups.has(groupId)) {
+          groups.set(groupId, { id: groupId });
+        }
+
+        for (const id of tabIds) {
+          const tab = tabs.get(id);
+          if (tab) tab.groupId = groupId;
+        }
+
+        return groupId;
+      }),
       captureVisibleTab: vi.fn(async () => 'data:image/png;base64,iVBORw0KGgo='),
-      query: vi.fn(async () => Array.from(tabs.values())),
+      query: vi.fn(async (query?: { groupId?: number }) => {
+        if (query && typeof query.groupId === 'number') {
+          return Array.from(tabs.values()).filter((t) => t.groupId === query.groupId);
+        }
+        return Array.from(tabs.values());
+      }),
       _tabs: tabs,
       _nextId: nextTabId,
       _createTab: (props?: Partial<MockTab>) => {
@@ -262,9 +292,41 @@ export function createMockBrowserAPI(): MockBrowserAPI {
       },
     },
     tabGroups: {
-      update: vi.fn().mockResolvedValue(undefined),
-      get: vi.fn().mockResolvedValue({ id: 1, title: 'Test', color: 'blue' }),
-      query: vi.fn().mockResolvedValue([]),
+      update: vi.fn(async (groupId: number, props: { title?: string; color?: string; collapsed?: boolean }) => {
+        const g = groups.get(groupId);
+        if (!g) throw new Error('Group not found');
+        Object.assign(g, props);
+      }),
+      get: vi.fn(async (groupId: number) => {
+        const g = groups.get(groupId);
+        if (!g) throw new Error('Group not found');
+        return g;
+      }),
+      query: vi.fn(async (query?: { title?: string }) => {
+        const all = Array.from(groups.values());
+        if (query?.title) return all.filter((g) => g.title === query.title);
+        return all;
+      }),
+    },
+    storage: {
+      local: {
+        _store: storageLocal,
+        get: vi.fn(async (key: string | string[]) => {
+          if (Array.isArray(key)) {
+            const out: Record<string, unknown> = {};
+            for (const k of key) out[k] = storageLocal.get(k);
+            return out;
+          }
+          return { [key]: storageLocal.get(key) };
+        }),
+        set: vi.fn(async (items: Record<string, unknown>) => {
+          for (const [k, v] of Object.entries(items)) storageLocal.set(k, v);
+        }),
+        remove: vi.fn(async (key: string | string[]) => {
+          const keys = Array.isArray(key) ? key : [key];
+          for (const k of keys) storageLocal.delete(k);
+        }),
+      },
     },
     debugger: mockDebugger,
     cookies: {
@@ -288,6 +350,9 @@ export function createMockBrowserAPI(): MockBrowserAPI {
       lastError = undefined;
       tabs.clear();
       nextTabId = 1;
+      groups.clear();
+      nextGroupId = 1;
+      storageLocal.clear();
       vi.clearAllMocks();
     },
     _setLastError: (message: string | undefined) => {
