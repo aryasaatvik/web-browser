@@ -1,0 +1,136 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "core-v*.*.*"
+      - "web-browser-v*.*.*"
+      - "extension-v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: bun install
+
+      - name: Test
+        run: bun run test
+
+      - name: Detect release target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if [[ "$TAG" == core-v* ]]; then
+            echo "kind=core" >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#core-v}" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" == web-browser-v* ]]; then
+            echo "kind=web-browser" >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#web-browser-v}" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" == extension-v* ]]; then
+            echo "kind=extension" >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#extension-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unknown tag: $TAG" >&2
+            exit 1
+          fi
+
+      - name: Validate package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          KIND="${{ steps.target.outputs.kind }}"
+          VERSION="${{ steps.target.outputs.version }}"
+
+          if [[ "$KIND" == "core" ]]; then
+            node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("./packages/core/package.json","utf8")); process.exit(p.version===process.env.V?0:1)' V="$VERSION"
+          elif [[ "$KIND" == "web-browser" ]]; then
+            node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("./packages/native-host/package.json","utf8")); process.exit(p.version===process.env.V?0:1)' V="$VERSION"
+            node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("./packages/native-host/package.json","utf8")); const dep=p.dependencies?.["@web-browser/core"]; if(!dep || String(dep).includes("workspace:")) process.exit(1);' V="$VERSION"
+          else
+            node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("./packages/extension/package.json","utf8")); process.exit(p.version===process.env.V?0:1)' V="$VERSION"
+          fi
+
+      - name: Build core
+        if: steps.target.outputs.kind == 'core'
+        run: bun run build:core
+
+      - name: Publish core to npm
+        if: steps.target.outputs.kind == 'core'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd packages/core
+          npm publish --access public
+
+      - name: Build web-browser
+        if: steps.target.outputs.kind == 'web-browser'
+        run: bun run build:native-host
+
+      - name: Publish web-browser to npm
+        if: steps.target.outputs.kind == 'web-browser'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd packages/native-host
+          npm publish
+
+      - name: Build + zip extension
+        if: steps.target.outputs.kind == 'extension'
+        id: ext
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run build:extension
+          (cd packages/extension && bun run zip)
+
+          ZIP="$(ls -t packages/extension/.output/*.zip | head -n 1)"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          sha256sum "$ZIP" > "$ZIP.sha256"
+          echo "sha=$ZIP.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun script/release-notes.ts --tag "${{ steps.target.outputs.tag }}" > release-notes.md
+          echo "path=release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release (no assets)
+        if: steps.target.outputs.kind != 'extension'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.target.outputs.tag }}
+          body_path: ${{ steps.notes.outputs.path }}
+
+      - name: Create GitHub Release (extension assets)
+        if: steps.target.outputs.kind == 'extension'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.target.outputs.tag }}
+          body_path: ${{ steps.notes.outputs.path }}
+          files: |
+            ${{ steps.ext.outputs.zip }}
+            ${{ steps.ext.outputs.sha }}

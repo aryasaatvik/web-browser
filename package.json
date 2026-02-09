@@ -18,7 +18,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "install:native": "./scripts/install.sh",
-    "uninstall:native": "./scripts/install.sh --uninstall"
+    "uninstall:native": "./scripts/install.sh --uninstall",
+    "release": "./script/release"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.18",
