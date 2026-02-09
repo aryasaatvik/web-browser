@@ -38,12 +38,19 @@ async function main() {
   const prev = await findPreviousTag(prefix, tag);
   const range = prev ? `${prev}..${tag}` : tag;
 
-  const log = await $`git log ${range} --pretty=format:%s (%h)`.text();
+  // Use a shell-safe format and render bullets ourselves.
+  const log = await $`git log ${range} --pretty=format:%s%x09%h`.text();
   const lines = log
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)
-    .map((l) => `- ${l}`)
+    .map((l) => {
+      const idx = l.lastIndexOf("\t");
+      if (idx === -1) return `- ${l}`;
+      const subject = l.slice(0, idx).trim();
+      const hash = l.slice(idx + 1).trim();
+      return `- ${subject} (${hash})`;
+    })
     .join("\n");
 
   const header = `# ${tag}\n\n`;
