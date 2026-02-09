@@ -2,16 +2,32 @@ export function ArchitectureDiagram(props: {
   className?: string;
   mode: "default" | "cdp";
 }) {
-  const clientRight = 40 + 220;
-  const daemonLeft = 300;
-  const daemonRight = 300 + 300;
-  const daemonBottom = 100 + 98;
-  const chromeLeft = 660;
-  const chromeBottom = 110 + 78;
-  const bridgeTop = 232;
-  const bridgeRight = 300 + 300;
-  const extensionLeft = 660;
-  const extensionTop = 232;
+  const client = { x: 40, y: 110, w: 220, h: 78 };
+  const daemon = { x: 300, y: 100, w: 300, h: 98 };
+  const chrome = { x: 660, y: 110, w: 280, h: 78 };
+  // Give the lower nodes a little more height so subtitle + meta don't overlap.
+  const bridge = { x: 300, y: 232, w: 300, h: 86 };
+  const extension = { x: 660, y: 232, w: 280, h: 86 };
+
+  const clientRight = client.x + client.w;
+  const clientCenterY = client.y + client.h / 2;
+
+  const daemonLeft = daemon.x;
+  const daemonRight = daemon.x + daemon.w;
+  const daemonBottom = daemon.y + daemon.h;
+  const daemonCenterY = daemon.y + daemon.h / 2;
+
+  const chromeLeft = chrome.x;
+  const chromeBottom = chrome.y + chrome.h;
+  const chromeCenterY = chrome.y + chrome.h / 2;
+
+  const bridgeTop = bridge.y;
+  const bridgeRight = bridge.x + bridge.w;
+  const bridgeCenterY = bridge.y + bridge.h / 2;
+
+  const extensionLeft = extension.x;
+  const extensionTop = extension.y;
+  const extensionCenterY = extension.y + extension.h / 2;
 
   const gap = 10;
   const isDefault = props.mode === "default";
@@ -69,28 +85,28 @@ export function ArchitectureDiagram(props: {
 
       {/* Nodes */}
       <Node
-        x={40}
-        y={110}
-        w={220}
-        h={78}
+        x={client.x}
+        y={client.y}
+        w={client.w}
+        h={client.h}
         title="Client"
         subtitle="Cursor / Claude"
       />
       <Node
-        x={300}
-        y={100}
-        w={300}
-        h={98}
+        x={daemon.x}
+        y={daemon.y}
+        w={daemon.w}
+        h={daemon.h}
         title="Daemon"
         subtitle="web-browser daemon"
         meta="127.0.0.1:49321/mcp"
         accent
       />
       <Node
-        x={660}
-        y={110}
-        w={280}
-        h={78}
+        x={chrome.x}
+        y={chrome.y}
+        w={chrome.w}
+        h={chrome.h}
         title="Chrome"
         subtitle="real browser"
       />
@@ -98,19 +114,19 @@ export function ArchitectureDiagram(props: {
       {isDefault ? (
         <>
           <Node
-            x={300}
-            y={232}
-            w={300}
-            h={70}
+            x={bridge.x}
+            y={bridge.y}
+            w={bridge.w}
+            h={bridge.h}
             title="Bridge"
             subtitle="native host"
             meta="/tmp/web-browser-$USER"
           />
           <Node
-            x={660}
-            y={232}
-            w={280}
-            h={70}
+            x={extension.x}
+            y={extension.y}
+            w={extension.w}
+            h={extension.h}
             title="Extension"
             subtitle="native messaging"
             meta="MV3"
@@ -120,26 +136,29 @@ export function ArchitectureDiagram(props: {
 
       {/* Arrows */}
       <Arrow
-        from={{ x: clientRight + gap, y: 149 }}
-        to={{ x: daemonLeft - gap, y: 149 }}
+        from={{ x: clientRight + gap, y: clientCenterY }}
+        to={{ x: daemonLeft - gap, y: daemonCenterY }}
         accent
       />
       {isDefault ? (
         <>
-          <Arrow from={{ x: 450, y: daemonBottom + gap }} to={{ x: 450, y: bridgeTop - gap }} />
           <Arrow
-            from={{ x: bridgeRight + gap, y: 267 }}
-            to={{ x: extensionLeft - gap, y: 267 }}
+            from={{ x: daemon.x + daemon.w / 2, y: daemonBottom + gap }}
+            to={{ x: bridge.x + bridge.w / 2, y: bridgeTop - gap }}
           />
           <Arrow
-            from={{ x: 800, y: extensionTop - gap }}
-            to={{ x: 800, y: chromeBottom + gap }}
+            from={{ x: bridgeRight + gap, y: bridgeCenterY }}
+            to={{ x: extensionLeft - gap, y: extensionCenterY }}
+          />
+          <Arrow
+            from={{ x: extension.x + extension.w / 2, y: extensionTop - gap }}
+            to={{ x: chrome.x + chrome.w / 2, y: chromeBottom + gap }}
           />
         </>
       ) : (
         <Arrow
-          from={{ x: daemonRight + gap, y: 149 }}
-          to={{ x: chromeLeft - gap, y: 149 }}
+          from={{ x: daemonRight + gap, y: daemonCenterY }}
+          to={{ x: chromeLeft - gap, y: chromeCenterY }}
           dashed
         />
       )}
@@ -160,12 +179,20 @@ function Node(props: {
   const { x, y, w, h, title, subtitle, meta, accent } = props;
   const stroke = accent ? "rgba(16,185,129,0.55)" : "rgba(33,33,33,1)";
   const fill = accent ? "rgba(16,185,129,0.06)" : "rgba(13,13,13,1)";
+
+  // Slightly increase internal padding so content doesn't feel cramped,
+  // especially on the shorter nodes (h=70).
+  const padX = 22;
+  const titleY = y + 30;
+  const subtitleY = titleY + 22;
+  const metaY = Math.min(subtitleY + 20, y + h - 14);
+
   return (
     <g filter="url(#softShadow)">
       <rect x={x} y={y} width={w} height={h} rx="16" fill={fill} stroke={stroke} />
       <text
-        x={x + 18}
-        y={y + 30}
+        x={x + padX}
+        y={titleY}
         fill="rgba(237,237,237,0.92)"
         fontFamily="Geist, system-ui, -apple-system, Segoe UI, sans-serif"
         fontSize="14"
@@ -175,8 +202,8 @@ function Node(props: {
       </text>
       {subtitle ? (
         <text
-          x={x + 18}
-          y={y + 50}
+          x={x + padX}
+          y={subtitleY}
           fill="rgba(157,157,157,0.92)"
           fontFamily="Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace"
           fontSize="12"
@@ -186,8 +213,8 @@ function Node(props: {
       ) : null}
       {meta ? (
         <text
-          x={x + 18}
-          y={y + 68}
+          x={x + padX}
+          y={metaY}
           fill="rgba(157,157,157,0.85)"
           fontFamily="Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace"
           fontSize="11"
