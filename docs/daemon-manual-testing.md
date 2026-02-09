@@ -74,6 +74,23 @@ console.log("sessionId =", transport.sessionId);
 await client.callTool({ name: "navigate", arguments: { url: "https://example.com" } });
 ```
 
+## (Optional) Use With Stdio-Only Clients (Claude Desktop, etc.)
+
+If your client only supports stdio MCP servers, you can run a stdio-to-HTTP bridge such as `mcp-remote`.
+
+Example `claude_desktop_config.json` entry:
+
+```json
+{
+  "mcpServers": {
+    "web-browser": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "http://127.0.0.1:49321/mcp"]
+    }
+  }
+}
+```
+
 ## Smoke Flows (Per-Session Isolation)
 
 Goal: two independent MCP sessions should produce two separate Chrome tab groups and should not interfere.

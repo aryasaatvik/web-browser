@@ -124,6 +124,21 @@ web-browser --cdp-url http://localhost:9222
 This project exposes MCP over Streamable HTTP at `http://127.0.0.1:49321/mcp` by default.
 Use an MCP client that supports Streamable HTTP and point it at that URL.
 
+#### Stdio-Only Clients (Claude Desktop, etc.)
+
+`web-browser` is an **HTTP MCP daemon** (Streamable HTTP), not a stdio MCP server. If your client only supports stdio MCP servers, run a local stdio-to-HTTP bridge such as `mcp-remote`:
+
+```json
+{
+  "mcpServers": {
+    "web-browser": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "http://127.0.0.1:49321/mcp"]
+    }
+  }
+}
+```
+
 ### Manual Testing
 
 See `docs/daemon-manual-testing.md`.
