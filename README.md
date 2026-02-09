@@ -2,6 +2,8 @@
 
 MCP (Model Context Protocol) server for browser automation via Chrome extension.
 
+**Official extension ID (deterministic):** `albcpcahedbojeaacnmihmkbljhndglk`
+
 ## Features
 
 - **Dual Backend Support**: Control existing Chrome browsers via extension, or headless browsers via CDP
@@ -79,8 +81,12 @@ bun run build:extension
 ### Install Native Messaging Bridge
 
 ```bash
-# Install native messaging bridge (macOS/Linux)
-bun run install:native -- --extension-id <your-extension-id>
+# If installed from npm:
+#   npm i -g web-browser
+#   web-browser install-native
+#
+# If working from this repo:
+bun run install:native
 
 # Uninstall
 bun run uninstall:native

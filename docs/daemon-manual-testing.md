@@ -19,15 +19,15 @@ bun run build:extension
 
 ## Install Native Host
 
-Chrome requires a concrete extension ID in `allowed_origins` (no wildcards).
+This project uses a deterministic extension ID (stable across machines/builds):
 
-1. Load the unpacked extension once (see next section)
-2. Copy the extension ID from `chrome://extensions` (Developer mode)
-3. Install native host:
+- Official extension ID: `albcpcahedbojeaacnmihmkbljhndglk`
+
+Install native host (repo workflow):
 
 ```bash
 cd /Users/aryasaatvik/Developer/browser-mcp
-bun run install:native -- --extension-id <your-extension-id>
+bun run install:native
 ```
 
 ## Load Extension (Unpacked)
@@ -94,4 +94,3 @@ Then, in each client:
 4. `get_page_text` and confirm contents match the correct site/session.
 
 Pass condition: tab operations from session A never change session B’s active tab (and vice versa).
-

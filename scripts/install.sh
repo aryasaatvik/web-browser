@@ -10,7 +10,7 @@ set -e
 
 # Configuration
 HOST_NAME="sh.arya.web_browser"
-DEFAULT_EXTENSION_ID=""  # Must be set to a real extension id (no wildcards)
+DEFAULT_EXTENSION_ID="albcpcahedbojeaacnmihmkbljhndglk"
 
 # Colors
 RED='\033[0;31m'
@@ -40,7 +40,7 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: $0 [--extension-id <id>] [--uninstall]"
       echo ""
       echo "Options:"
-      echo "  --extension-id <id>  Chrome extension ID (default: * for all)"
+      echo "  --extension-id <id>  Chrome extension ID (default: official deterministic id)"
       echo "  --uninstall          Remove the native messaging bridge"
       echo "  --help, -h           Show this help"
       exit 0
@@ -52,14 +52,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Chrome does not support wildcards in allowed_origins. We must install with a real extension id.
+# Chrome requires a concrete extension ID in allowed_origins (no wildcards).
 if [[ -z "$EXTENSION_ID" ]]; then
-  log_error "Missing --extension-id."
-  echo ""
-  echo "Find your extension ID in chrome://extensions (Developer mode), then run:"
-  echo ""
-  echo "  bun run install:native -- --extension-id <your-extension-id>"
-  echo ""
+  log_error "Missing extension id."
   exit 1
 fi
 
@@ -239,19 +234,9 @@ echo "     - Enable 'Developer mode'"
 echo "     - Click 'Load unpacked'"
 echo "     - Select: $PROJECT_ROOT/packages/extension/.output/chrome-mv3"
 echo ""
-echo "  3. Start the MCP server (for Claude Desktop/Claude Code):"
-  echo "     web-browser"
+echo "  3. Start the MCP daemon:"
+echo "     web-browser"
+echo "     # MCP Streamable HTTP: http://127.0.0.1:49321/mcp"
 echo ""
-echo "  4. Add to Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json):"
-echo '     {'
-echo '       "mcpServers": {'
-  echo '         "web-browser": {'
-  echo '           "command": "web-browser"'
-echo '         }'
-echo '       }'
-echo '     }'
-echo ""
-if [[ "$EXTENSION_ID" == "*" ]]; then
-  echo "  Note: Currently allowing all extensions (dev mode)."
-  echo "  For production, re-run with: $0 --extension-id <your-extension-id>"
-fi
+echo "  4. Connect a Streamable HTTP MCP client to:"
+echo "     http://127.0.0.1:49321/mcp"
