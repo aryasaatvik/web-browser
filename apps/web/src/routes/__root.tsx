@@ -2,6 +2,7 @@ import { TanStackDevtools } from "@tanstack/react-devtools";
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import appCss from "../styles.css?url";
+import { useEffect } from "react";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -50,6 +51,14 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      import("react-grab/core").then(({ init }) => {
+        init({ activationKey: "Meta+c" });
+      });
+    }
+  }, []);
+
   return (
     <html lang="en">
       <head>
@@ -67,7 +76,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <TanStackDevtools
             config={{ position: "bottom-right" }}
             plugins={[
-              { name: "TanStack Router", render: <TanStackRouterDevtoolsPanel /> },
+              {
+                name: "TanStack Router",
+                render: <TanStackRouterDevtoolsPanel />,
+              },
             ]}
           />
         )}
