@@ -5,6 +5,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getToolDefinitions, executeTool } from './index.js';
 import type { BrowserBackend, ToolResult } from '../../backends/types.js';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 // Create a mock backend for testing
 function createMockBackend(overrides: Partial<BrowserBackend> = {}): BrowserBackend {
@@ -496,9 +499,84 @@ describe('executeTool', () => {
       });
     });
   });
+
+  describe('recording/gif persistence', () => {
+    it('should save recording_stop base64 to the path from recording_start', async () => {
+      const tmp = path.join(os.tmpdir(), `web-browser-mcp-test-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      const outPath = path.join(tmp, 'recording.webm');
+      const payload = Buffer.from('hello-recording');
+      const base64 = payload.toString('base64');
+
+      const backend = createMockBackend({
+        execute: vi.fn(async (action: string): Promise<ToolResult> => {
+          if (action === 'recording_stop') {
+            return { success: true, data: { recording: base64 } };
+          }
+          return { success: true, data: { ok: true } };
+        }),
+      });
+
+      await executeTool(backend, 'recording_start', { path: outPath });
+      const stop = await executeTool(backend, 'recording_stop', {});
+
+      expect(stop.success).toBe(true);
+
+      const written = await fs.readFile(outPath);
+      expect(written.equals(payload)).toBe(true);
+    });
+
+    it('should save gif_export base64 to the provided path', async () => {
+      const tmp = path.join(os.tmpdir(), `web-browser-mcp-test-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      const outPath = path.join(tmp, 'capture.gif');
+      const payload = Buffer.from('gif-bytes');
+      const base64 = payload.toString('base64');
+
+      const backend = createMockBackend({
+        execute: vi.fn(async (action: string): Promise<ToolResult> => {
+          if (action === 'gif_export') {
+            return { success: true, data: { gif: base64 } };
+          }
+          return { success: true, data: {} };
+        }),
+      });
+
+      const res = await executeTool(backend, 'gif_export', { path: outPath, duration: 1 });
+      expect(res.success).toBe(true);
+
+      const written = await fs.readFile(outPath);
+      expect(written.equals(payload)).toBe(true);
+    });
+  });
 });
 
 describe('Tool action mappings', () => {
+  const tmp = path.join(os.tmpdir(), `web-browser-mcp-mapping-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const argsForTool: Record<string, Record<string, unknown>> = {
+    navigate: { url: 'https://example.com' },
+    read_page: {},
+    get_page_text: {},
+    form_input: { ref: 'ref_1', value: 'x' },
+    javascript: { script: '1 + 1' },
+    tabs_list: {},
+    tabs_create: { url: 'https://example.com' },
+    tabs_close: { tabId: 1 },
+    tabs_switch: { tabId: '1' },
+    cookies_get: { url: 'https://example.com' },
+    cookies_set: { name: 'a', value: 'b', url: 'https://example.com' },
+    cookies_delete: { name: 'a', url: 'https://example.com' },
+    storage_get: { type: 'local' },
+    storage_set: { type: 'local', key: 'k', value: 'v' },
+    recording_start: { path: path.join(tmp, 'recording.webm') },
+    recording_stop: {},
+    gif_export: { path: path.join(tmp, 'capture.gif'), duration: 1 },
+    query_selector: { selector: 'css=body' },
+    wait_for_stable: { ref: 'ref_1' },
+    check_hit_target: { ref: 'ref_1', x: 1, y: 1 },
+    console_get: {},
+    network_get: {},
+    resize_viewport: { width: 800, height: 600 },
+  };
+
   const actionMappings = [
     ['navigate', 'navigate'],
     ['read_page', 'snapshot'],
@@ -529,7 +607,8 @@ describe('Tool action mappings', () => {
     it(`should map ${toolName} to ${expectedAction}`, async () => {
       const backend = createMockBackend();
 
-      await executeTool(backend, toolName, {});
+      const toolArgs = argsForTool[toolName] || {};
+      await executeTool(backend, toolName, toolArgs);
 
       expect(backend.execute).toHaveBeenCalledWith(expectedAction, expect.anything());
     });

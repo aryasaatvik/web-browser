@@ -17,10 +17,10 @@ interface PendingRequest {
 /**
  * Get the MCP server socket address.
  *
- * This backend connects to the Web Browser MCP server socket.
- * Note: In the MCP server + bridge architecture, the MCP server itself contains
+ * This backend connects to the web-browser daemon socket.
+ * Note: In the daemon + bridge architecture, the daemon itself contains
  * a BridgeBackend. This ExtensionBackend class exists for cases where
- * you want to connect to an existing MCP server from another process.
+ * you want to connect to an existing daemon from another process.
  */
 function getMcpSocketAddress(): { type: 'unix'; path: string } | { type: 'tcp'; host: string; port: number } {
   const override = process.env.WEB_BROWSER_MCP_SOCKET;

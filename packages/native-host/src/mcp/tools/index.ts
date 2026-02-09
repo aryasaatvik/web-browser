@@ -2,6 +2,8 @@
  * MCP Tool definitions and execution.
  */
 
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import type { BrowserBackend, ToolResult } from '../../backends/types.js';
 import { findElements } from '../../ai/find.js';
 
@@ -173,9 +175,39 @@ export function getToolDefinitions(): ToolDefinition[] {
       },
     },
 
+    // MCP bootstrap aliases (Claude-style tab context)
+    {
+      name: 'tabs_context_mcp',
+      description:
+        'Get context information about the current MCP session tab group. Use this at least once before other browser tools. If createIfEmpty is true and no managed tabs exist, a new tab will be created.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          createIfEmpty: {
+            type: 'boolean',
+            description: 'Create a new managed tab (and tab group) if none exist for this session.',
+          },
+        },
+      },
+    },
+
     {
       name: 'tabs_create',
       description: 'Create a new browser tab',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'URL to open in the new tab',
+          },
+        },
+      },
+    },
+
+    {
+      name: 'tabs_create_mcp',
+      description: 'Create a new empty tab in the MCP session tab group',
       inputSchema: {
         type: 'object',
         properties: {
@@ -550,7 +582,9 @@ export async function executeTool(
     form_input: 'fill',
     javascript: 'evaluate',
     tabs_list: 'tab_list',
+    tabs_context_mcp: 'tab_list',
     tabs_create: 'tab_new',
+    tabs_create_mcp: 'tab_new',
     tabs_close: 'tab_close',
     tabs_switch: 'tab_switch',
     cookies_get: 'cookies_get',
@@ -574,6 +608,23 @@ export async function executeTool(
     return { success: false, error: `Unknown tool: ${tool}` };
   }
 
+  // Special handling for tabs_context_mcp: optionally create a tab when empty.
+  if (tool === 'tabs_context_mcp') {
+    const createIfEmpty = args.createIfEmpty === true;
+    const list1 = await backend.execute(action, args);
+    if (!createIfEmpty) return list1;
+
+    const tabs = (list1.success && list1.data && typeof list1.data === 'object')
+      ? (list1.data as { tabs?: unknown[] }).tabs
+      : undefined;
+
+    if (Array.isArray(tabs) && tabs.length > 0) return list1;
+
+    // Create a new tab for this MCP session, then re-list.
+    await backend.execute('tab_new', { sessionId: args.sessionId });
+    return backend.execute(action, args);
+  }
+
   // Special handling for computer tool
   if (tool === 'computer') {
     return handleComputerTool(backend, args);
@@ -584,7 +635,98 @@ export async function executeTool(
     return handleFindTool(backend, args);
   }
 
+  // Special handling for recording tools: persist to disk (path comes from MCP args).
+  if (tool === 'recording_start') {
+    return handleRecordingStart(backend, action, args);
+  }
+
+  if (tool === 'recording_stop') {
+    return handleRecordingStop(backend, action, args);
+  }
+
+  if (tool === 'gif_export') {
+    return handleGifExport(backend, action, args);
+  }
+
   return backend.execute(action, args);
+}
+
+let recordingOutputPath: string | null = null;
+
+function extractBase64(data: unknown, keys: string[]): string | null {
+  if (typeof data === 'string') return data;
+  if (!data || typeof data !== 'object') return null;
+
+  const obj = data as Record<string, unknown>;
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === 'string' && val) return val;
+  }
+  return null;
+}
+
+async function writeBase64File(filePath: string, base64: string): Promise<number> {
+  // Ensure parent dir exists when a nested path is provided.
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const buf = Buffer.from(base64, 'base64');
+  await fs.writeFile(filePath, buf);
+  return buf.byteLength;
+}
+
+async function handleRecordingStart(
+  backend: BrowserBackend,
+  action: string,
+  args: Record<string, unknown>
+): Promise<ToolResult> {
+  const outPath = args.path;
+  if (typeof outPath !== 'string' || !outPath.trim()) {
+    return { success: false, error: 'recording_start requires a non-empty "path"' };
+  }
+
+  recordingOutputPath = outPath;
+  return backend.execute(action, args);
+}
+
+async function handleRecordingStop(
+  backend: BrowserBackend,
+  action: string,
+  args: Record<string, unknown>
+): Promise<ToolResult> {
+  const result = await backend.execute(action, args);
+  if (!result.success) return result;
+
+  const outPath = recordingOutputPath;
+  const base64 = extractBase64(result.data, ['recording', 'base64', 'data']);
+
+  // If we don't have a path or base64, just return backend output.
+  if (!outPath || !base64) {
+    recordingOutputPath = null;
+    return result;
+  }
+
+  const bytes = await writeBase64File(outPath, base64);
+  recordingOutputPath = null;
+  return { success: true, data: { saved: true, path: outPath, bytes } };
+}
+
+async function handleGifExport(
+  backend: BrowserBackend,
+  action: string,
+  args: Record<string, unknown>
+): Promise<ToolResult> {
+  const outPath = args.path;
+  if (typeof outPath !== 'string' || !outPath.trim()) {
+    return { success: false, error: 'gif_export requires a non-empty "path"' };
+  }
+
+  const result = await backend.execute(action, args);
+  if (!result.success) return result;
+
+  const base64 = extractBase64(result.data, ['gif', 'base64', 'data']);
+  if (!base64) return result;
+
+  const bytes = await writeBase64File(outPath, base64);
+  return { success: true, data: { saved: true, path: outPath, bytes } };
 }
 
 async function handleFindTool(

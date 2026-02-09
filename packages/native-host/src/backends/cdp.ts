@@ -10,6 +10,61 @@ import WebSocket from 'ws';
 import type { BrowserBackend, ToolResult, ConnectOptions } from './types.js';
 import { coreBundleSource } from '@web-browser/core/browser-bundle';
 
+/**
+ * Resolve a CDP WebSocket URL from common user inputs.
+ *
+ * Chrome's remote debugging port is an HTTP server. A bare `ws://host:port`
+ * is not a valid CDP websocket endpoint. When given a bare host:port (either
+ * as `ws://host:port` or `http://host:port`), resolve it via `/json/version`.
+ */
+async function resolveCdpWebSocketUrl(input: string): Promise<string> {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch (err) {
+    throw new Error(
+      `Invalid CDP URL "${input}". Expected a full CDP websocket URL like ` +
+        `"ws://127.0.0.1:9222/devtools/browser/<id>" or a remote-debugging ` +
+        `origin like "http://127.0.0.1:9222".`
+    );
+  }
+
+  // Already a full CDP websocket URL.
+  if ((url.protocol === 'ws:' || url.protocol === 'wss:') && url.pathname && url.pathname !== '/') {
+    return url.toString();
+  }
+
+  // For http(s) origins, also resolve via /json/version.
+  const isHttp = url.protocol === 'http:' || url.protocol === 'https:';
+  const isWsOrigin = (url.protocol === 'ws:' || url.protocol === 'wss:') && (url.pathname === '' || url.pathname === '/');
+
+  if (!isHttp && !isWsOrigin) {
+    // ws://... with a non-root pathname was handled above; anything else is unexpected.
+    return url.toString();
+  }
+
+  const versionUrl = new URL(url.toString());
+  // Map ws -> http and wss -> https for the version endpoint.
+  if (versionUrl.protocol === 'ws:') versionUrl.protocol = 'http:';
+  if (versionUrl.protocol === 'wss:') versionUrl.protocol = 'https:';
+  versionUrl.pathname = '/json/version';
+  versionUrl.search = '';
+  versionUrl.hash = '';
+
+  const res = await fetch(versionUrl.toString());
+  if (!res.ok) {
+    throw new Error(`Failed to fetch CDP version metadata from ${versionUrl} (${res.status})`);
+  }
+
+  const meta = (await res.json()) as { webSocketDebuggerUrl?: unknown };
+  const wsUrl = meta.webSocketDebuggerUrl;
+  if (typeof wsUrl !== 'string' || !wsUrl) {
+    throw new Error(`CDP version metadata from ${versionUrl} did not include "webSocketDebuggerUrl"`);
+  }
+
+  return wsUrl;
+}
+
 interface ConsoleMessage {
   level: 'log' | 'warning' | 'error' | 'info' | 'debug';
   text: string;
@@ -115,7 +170,8 @@ export class CdpBackend implements BrowserBackend {
       throw new Error('CDP URL is required');
     }
 
-    await this.connectWebSocket(options.url);
+    const resolvedUrl = await resolveCdpWebSocketUrl(options.url);
+    await this.connectWebSocket(resolvedUrl);
     await this.attachToTarget();
   }
 

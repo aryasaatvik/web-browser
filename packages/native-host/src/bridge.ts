@@ -2,11 +2,11 @@
  * Bridge mode for Web Browser.
  *
  * The bridge is spawned by Chrome via native messaging and acts as a connector:
- * Chrome Extension ↔ (native messaging stdio) ↔ Bridge ↔ (Unix socket) ↔ MCP Server
+ * Chrome Extension ↔ (native messaging stdio) ↔ Bridge ↔ (Unix socket) ↔ MCP daemon
  *
- * The bridge is resilient to MCP server availability:
+ * The bridge is resilient to daemon availability:
  * - Retries connection with exponential backoff
- * - Reconnects automatically if MCP server restarts
+ * - Reconnects automatically if the daemon restarts
  * - Queues messages while disconnected
  * - Stays alive as long as Chrome keeps the native messaging port open
  */
@@ -26,7 +26,7 @@ const MAX_RETRY_DELAY = 10000; // ms
 const MAX_QUEUE_SIZE = 100;
 
 /**
- * Get the MCP server socket address.
+ * Get the daemon socket address.
  */
 function getMcpSocketAddress(): { type: 'unix'; path: string } | { type: 'tcp'; host: string; port: number } {
   const override = process.env.WEB_BROWSER_MCP_SOCKET;
@@ -46,7 +46,7 @@ function getMcpSocketAddress(): { type: 'unix'; path: string } | { type: 'tcp'; 
 }
 
 /**
- * Attempt to connect to the MCP server socket once.
+ * Attempt to connect to the daemon socket once.
  */
 function tryConnect(): Promise<net.Socket> {
   const addr = getMcpSocketAddress();
@@ -75,7 +75,7 @@ function tryConnect(): Promise<net.Socket> {
  * Run the bridge process.
  *
  * The bridge stays alive as long as Chrome keeps the native messaging connection open.
- * It automatically connects/reconnects to the MCP server and queues messages while disconnected.
+ * It automatically connects/reconnects to the daemon and queues messages while disconnected.
  */
 export async function runBridge(): Promise<void> {
   // Disable buffering on stdin/stdout for native messaging

@@ -4,15 +4,14 @@
  * web-browser CLI entry point.
  *
  * Usage:
- *   web-browser                    # Run MCP server (MCP on stdio + socket server)
- *   web-browser mcp                # Same as above, explicit
+ *   web-browser                    # Run MCP daemon (Streamable HTTP + socket server)
+ *   web-browser daemon             # Same as above, explicit
  *   web-browser bridge             # Run bridge mode (Chrome spawns this via native messaging)
  *   web-browser --backend cdp      # Direct CDP mode (no extension needed)
  */
 
-import { runMcp } from '../dist/mcp.js';
+import { runDaemon, BridgeBackend } from '../dist/daemon.js';
 import { runBridge } from '../dist/bridge.js';
-import { MCPServer } from '../dist/mcp/server.js';
 import { CdpBackend } from '../dist/backends/cdp.js';
 
 function printHelp() {
@@ -23,33 +22,36 @@ Usage:
    web-browser [command] [options]
 
 Commands:
-  mcp                 Run as MCP server (default). Listens for MCP on stdio
-                      and accepts extension bridge connections on Unix socket.
+  daemon              Run as MCP daemon (default). Listens for MCP over
+                      Streamable HTTP on 127.0.0.1 and accepts extension bridge
+                      connections on a Unix socket.
 
   bridge              Run as native messaging bridge. Chrome spawns this process
                       via browser.runtime.connectNative(). Bridges between
-                      Chrome's native messaging (stdio) and MCP server (socket).
+                      Chrome's native messaging (stdio) and the daemon socket.
 
 Options:
   --backend cdp       Use direct CDP backend instead of extension.
                       Requires Chrome running with --remote-debugging-port.
 
-  --cdp-url <url>     CDP WebSocket URL (implies --backend cdp)
-                      Example: ws://localhost:9222
+  --cdp-url <url>     CDP URL (implies --backend cdp). Accepts either:
+                      - A full CDP websocket URL: ws://127.0.0.1:9222/devtools/browser/<id>
+                      - A remote-debugging origin: http://127.0.0.1:9222
 
   --help, -h          Show this help message
 
 Environment Variables:
-  WEB_BROWSER_MCP_SOCKET  Override the Unix socket path for MCP server/bridge communication
+  WEB_BROWSER_MCP_HTTP_PORT  Override the Streamable HTTP daemon port (default: 49321)
+  WEB_BROWSER_MCP_SOCKET     Override the Unix socket path for daemon/bridge communication
   WEB_BROWSER_MCP_PORT    Override the TCP port for Windows (default: 49320)
   ANTHROPIC_API_KEY       Required for the 'find' tool (AI-powered element finding)
 
 Examples:
-  # Standard usage with Chrome extension
-   web-browser                           # Start MCP server for Claude Desktop/Code
+  # Standard usage with Chrome extension + Streamable HTTP clients
+   web-browser                           # Start MCP daemon on http://127.0.0.1:49321/mcp
 
   # Direct CDP mode (no extension, limited functionality)
-   web-browser --cdp-url ws://localhost:9222
+   web-browser --cdp-url http://127.0.0.1:9222
 
   # For Chrome native messaging manifest (internal use)
    web-browser bridge
@@ -66,14 +68,14 @@ async function main() {
   }
 
   // Parse command (first non-flag argument)
-  let command = 'mcp'; // default
+  let command = 'daemon'; // default
   let cdpUrl = undefined;
   let backendType = 'extension';
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
-    if (arg === 'mcp' || arg === 'bridge') {
+    if (arg === 'daemon' || arg === 'bridge' || arg === 'mcp') {
       command = arg;
     } else if (arg === '--backend' && args[i + 1]) {
       backendType = args[i + 1];
@@ -93,7 +95,7 @@ async function main() {
       break;
 
     case 'cdp': {
-      // Direct CDP mode - use the old MCPServer with CdpBackend
+      // Direct CDP mode - run daemon with CdpBackend
       if (!cdpUrl) {
         console.error('Error: --cdp-url is required for CDP backend');
         process.exit(1);
@@ -102,34 +104,31 @@ async function main() {
       const backend = new CdpBackend();
       await backend.connect({ url: cdpUrl });
 
-      const server = new MCPServer({
+      await runDaemon({
         backend,
-        transport: 'stdio',
+        disableBridgeSocketServer: true,
       });
-
-      process.on('SIGINT', async () => {
-        await server.stop();
-        process.exit(0);
-      });
-
-      process.on('SIGTERM', async () => {
-        await server.stop();
-        process.exit(0);
-      });
-
-      await server.start();
       break;
     }
 
     case 'mcp':
+    case 'daemon':
     default: {
-      // Check if they accidentally passed --backend extension (which is now default mcp mode)
+      // Daemon mode (extension backend)
       if (backendType === 'cdp' && !cdpUrl) {
         console.error('Error: --cdp-url is required for CDP backend');
         process.exit(1);
       }
 
-      await runMcp();
+      if (backendType === 'cdp') {
+        const backend = new CdpBackend();
+        await backend.connect({ url: cdpUrl });
+        await runDaemon({ backend, disableBridgeSocketServer: true });
+        return;
+      }
+
+      const backend = new BridgeBackend();
+      await runDaemon({ backend });
       break;
     }
   }
