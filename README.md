@@ -8,20 +8,21 @@ MCP (Model Context Protocol) server for browser automation via Chrome extension.
 - **Native Messaging**: Secure communication between MCP server and Chrome extension
 - **Rich Automation**: Navigate, click, type, scroll, screenshot, and more
 - **AI-Powered Find**: Natural language element search using Claude
-- **Multiple Transports**: stdio, HTTP/SSE, and WebSocket support
+- **MCP Streamable HTTP Daemon**: Multi-client sessions over Streamable HTTP on localhost
 - **Recording & GIF**: Capture browser sessions as video or GIF
 
 ## Architecture
 
-### MCP Server + Bridge Pattern
+### MCP Daemon + Bridge Pattern
 
-The default architecture uses an MCP server + bridge pattern for robust communication:
+The default architecture runs a long-lived local daemon that speaks MCP over **Streamable HTTP**.
+Chrome connects via native-messaging to a bridge process which forwards commands over a local socket.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       MCP Server (`web-browser mcp`)                        │
+│                      MCP Daemon (`web-browser daemon`)                      │
 │                                                                             │
-│    Claude ──stdio──►  ┌─────────────────────────────┐                       │
+│  MCP Client ──HTTP──►  ┌─────────────────────────────┐                      │
 │                       │         Tool Execution      │                       │
 │                       └───────────┬─────────────────┘                       │
 │                                   │                                         │
@@ -35,14 +36,14 @@ The default architecture uses an MCP server + bridge pattern for robust communic
                        │                      │
                        ▼                      ▼
                  Chrome (CDP)            Bridge ◄──native msg──► Extension
-                 (WebSocket)       (`web-browser bridge`)
+                 (WebSocket)       (`web-browser bridge`, spawned by Chrome)
 ```
 
 **Flow:**
-1. MCP Client (Claude Desktop/Code) connects to MCP Server via stdio
-2. MCP Server accepts bridge connections on Unix socket
+1. MCP Client connects to the daemon via Streamable HTTP (`http://127.0.0.1:<port>/mcp`)
+2. Daemon accepts bridge connections on a local socket (`/tmp/web-browser-$USER` by default)
 3. Bridge (spawned by Chrome) connects native messaging to MCP Server
-4. Commands flow: MCP → Bridge → Chrome Extension → Browser
+4. Commands flow: MCP → daemon → bridge socket → bridge → Chrome Extension → Browser
 
 ### Alternative: Direct CDP (No Extension)
 
@@ -79,7 +80,7 @@ bun run build:extension
 
 ```bash
 # Install native messaging bridge (macOS/Linux)
-bun run install:native
+bun run install:native -- --extension-id <your-extension-id>
 
 # Uninstall
 bun run uninstall:native
@@ -97,32 +98,29 @@ bun run uninstall:native
 ### CLI
 
 ```bash
-# Run as MCP server (default) - connects to Chrome extension via bridge
+# Run as MCP daemon (default) - connects to Chrome extension via bridge
 web-browser
 
-# Explicit MCP server mode
-web-browser mcp
+# Explicit daemon mode (alias: `mcp`)
+web-browser daemon
 
 # Run as bridge (Chrome spawns this via native messaging)
 web-browser bridge
 
 # Direct CDP mode (no extension needed, for headless browsers)
-web-browser --cdp-url ws://localhost:9222
+# Pass either a full CDP websocket URL (ws://.../devtools/browser/<id>)
+# or a remote-debugging origin (http://localhost:9222).
+web-browser --cdp-url http://localhost:9222
 ```
 
-### Claude Desktop Configuration
+### MCP Client Configuration
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+This project exposes MCP over Streamable HTTP at `http://127.0.0.1:49321/mcp` by default.
+Use an MCP client that supports Streamable HTTP and point it at that URL.
 
-```json
-{
-  "mcpServers": {
-    "web-browser": {
-      "command": "web-browser"
-    }
-  }
-}
-```
+### Manual Testing
+
+See `docs/daemon-manual-testing.md`.
 
 ### MCP Tools
 
@@ -192,6 +190,7 @@ bun run build:extension
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | API key for AI-powered find tool |
+| `WEB_BROWSER_MCP_HTTP_PORT` | Override Streamable HTTP daemon port (default: 49321) |
 | `WEB_BROWSER_MCP_SOCKET` | Override Unix socket path for MCP server/bridge communication |
 | `WEB_BROWSER_MCP_PORT` | Override TCP port for Windows (default: 49320) |
 

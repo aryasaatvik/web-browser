@@ -10,7 +10,7 @@ set -e
 
 # Configuration
 HOST_NAME="sh.arya.web_browser"
-DEFAULT_EXTENSION_ID="*"  # Allow all extensions in dev mode
+DEFAULT_EXTENSION_ID=""  # Must be set to a real extension id (no wildcards)
 
 # Colors
 RED='\033[0;31m'
@@ -51,6 +51,17 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Chrome does not support wildcards in allowed_origins. We must install with a real extension id.
+if [[ -z "$EXTENSION_ID" ]]; then
+  log_error "Missing --extension-id."
+  echo ""
+  echo "Find your extension ID in chrome://extensions (Developer mode), then run:"
+  echo ""
+  echo "  bun run install:native -- --extension-id <your-extension-id>"
+  echo ""
+  exit 1
+fi
 
 # Detect OS
 OS="$(uname -s)"
@@ -136,6 +147,17 @@ bun run build:native-host
 log_info "Creating install directory: $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
+# Resolve an absolute node path for Chrome's restricted environment.
+NODE_BIN="$(command -v node || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  log_error "node not found in PATH. Install Node.js (>= 18) and re-run."
+  exit 1
+fi
+if [[ ! -x "$NODE_BIN" ]]; then
+  log_error "Resolved node path is not executable: $NODE_BIN"
+  exit 1
+fi
+
 # Create the native messaging bridge wrapper script
 # This is what Chrome spawns via native messaging
 log_info "Creating native messaging bridge wrapper..."
@@ -145,18 +167,13 @@ cat > "$HOST_PATH" << EOF
 # Chrome spawns this via browser.runtime.connectNative()
 # This bridge connects Chrome's native messaging to the MCP server Unix socket
 
-exec node "$PROJECT_ROOT/packages/native-host/bin/web-browser.js" bridge
+exec "$NODE_BIN" "$PROJECT_ROOT/packages/native-host/bin/web-browser.js" bridge
 EOF
 
 chmod +x "$HOST_PATH"
 
 # Create allowed_origins based on extension ID
-if [[ "$EXTENSION_ID" == "*" ]]; then
-  # Allow all extensions (dev mode)
-  ALLOWED_ORIGINS='["chrome-extension://*/"]'
-else
-  ALLOWED_ORIGINS="[\"chrome-extension://$EXTENSION_ID/\"]"
-fi
+ALLOWED_ORIGINS="[\"chrome-extension://$EXTENSION_ID/\"]"
 
 # Create manifest JSON
 MANIFEST_CONTENT=$(cat << EOF
@@ -209,7 +226,7 @@ echo ""
 log_info "Installation complete!"
 echo ""
 echo "Architecture:"
-echo "  Chrome Extension → Native Messaging → Bridge → Unix Socket → MCP Server → MCP"
+echo "  Chrome Extension → Native Messaging → Bridge → Unix Socket → MCP daemon → MCP"
 echo ""
 echo "Usage:"
 echo ""
