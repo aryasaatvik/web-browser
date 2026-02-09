@@ -1,7 +1,7 @@
-export { default as Download3 } from "./Download3";
-export { default as Plug } from "./Plug";
-export { default as Server } from "./Server";
-export { default as Terminal } from "./Terminal";
+export { default as Download3 } from "./download";
+export { default as Mcp } from "./mcp";
+export { default as Plug } from "./plug";
+export { default as Server } from "./server";
+export { default as Terminal } from "./terminal";
 
 export type { IconNode, IconProps, NucleoIcon, NucleoIconProps } from "./types";
-

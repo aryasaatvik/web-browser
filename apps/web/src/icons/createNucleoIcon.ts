@@ -1,5 +1,5 @@
 import { createElement, forwardRef } from "react";
-import Icon from "./Icon";
+import Icon from "./icon";
 import type { IconMetadata, IconNode, NucleoIconProps } from "./types";
 import { mergeClasses, toKebabCase } from "./utils";
 
