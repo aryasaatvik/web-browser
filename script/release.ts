@@ -74,10 +74,12 @@ async function main() {
   const tag = `${prefix}-v${nextVersion}`;
 
   // Update the relevant package.json version.
+  const filesToAdd: string[] = [];
   if (pkg === "core") {
     const json = await readJson(corePkgPath);
     json.version = nextVersion;
     await writeJson(corePkgPath, json);
+    filesToAdd.push("packages/core/package.json");
   } else if (pkg === "web-browser") {
     const json = await readJson(hostPkgPath);
     json.version = nextVersion;
@@ -88,14 +90,16 @@ async function main() {
     if (!json.dependencies) json.dependencies = {};
     json.dependencies["@web-browser/core"] = `^${coreVersion}`;
     await writeJson(hostPkgPath, json);
+    filesToAdd.push("packages/native-host/package.json");
   } else {
     const json = await readJson(extPkgPath);
     json.version = nextVersion;
     await writeJson(extPkgPath, json);
+    filesToAdd.push("packages/extension/package.json");
   }
 
   // Commit + tag.
-  await $`git add ${repoRoot}`;
+  await $`git add ${filesToAdd}`;
   await $`git commit -m ${`release(${pkg}): v${nextVersion}`}`;
   await $`git tag ${tag}`;
 
@@ -112,4 +116,3 @@ main().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
-
