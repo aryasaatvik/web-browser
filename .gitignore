@@ -28,11 +28,13 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 *.tsbuildinfo
 
 # turbo
-.turbo
+**/.turbo
 
 # wxt
 .wxt
 .output
+**/.tanstack
+**/.wrangler
 
 # IntelliJ based IDEs
 .idea
