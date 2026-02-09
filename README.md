@@ -126,7 +126,7 @@ Use an MCP client that supports Streamable HTTP and point it at that URL.
 
 #### Stdio-Only Clients (Claude Desktop, etc.)
 
-`web-browser` is an **HTTP MCP daemon** (Streamable HTTP), not a stdio MCP server. If your client only supports stdio MCP servers, run a local stdio-to-HTTP bridge such as `mcp-remote`:
+`web-browser` is an **HTTP MCP daemon** (Streamable HTTP), not a stdio MCP server. If your client only supports stdio MCP servers, you can run a local stdio-to-HTTP bridge such as `mcp-remote` (make sure the `web-browser` daemon is already running):
 
 ```json
 {

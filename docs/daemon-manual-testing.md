@@ -78,6 +78,8 @@ await client.callTool({ name: "navigate", arguments: { url: "https://example.com
 
 If your client only supports stdio MCP servers, you can run a stdio-to-HTTP bridge such as `mcp-remote`.
 
+Note: `mcp-remote` does not start the daemon. Start `web-browser` separately, then point `mcp-remote` at `http://127.0.0.1:49321/mcp`.
+
 Example `claude_desktop_config.json` entry:
 
 ```json
