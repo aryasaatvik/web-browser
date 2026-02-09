@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "web-browser-web",
+  "name": "web-browser",
   "compatibility_date": "2026-02-09",
   "compatibility_flags": [
     "nodejs_compat",
