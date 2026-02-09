@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"web-browser": {
+			"url": "http://127.0.0.1:49321/mcp",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}
