@@ -1,6 +1,10 @@
 {
   "name": "web-browser",
   "version": "0.1.0",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "MCP server and native messaging bridge for web-browser",
   "type": "module",
   "main": "dist/index.js",
