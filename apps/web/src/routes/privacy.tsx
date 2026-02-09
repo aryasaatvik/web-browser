@@ -149,7 +149,7 @@ function PrivacyPage() {
               For questions about this policy, open an issue on{" "}
               <a
                 className="text-foreground underline-offset-4 hover:underline"
-                href="https://github.com/AryaLabsHQ/browser-mcp"
+                href="https://github.com/aryasaatvik/web-browser"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -163,4 +163,3 @@ function PrivacyPage() {
     </div>
   );
 }
-

@@ -1,9 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { ArchitectureDiagram } from "@/components/architecture-diagram";
-import Download3 from "@/icons/Download3";
-import Plug from "@/icons/Plug";
-import Server from "@/icons/Server";
+import Download3 from "@/icons/download";
+import GitHub from "@/icons/github";
+import Mcp from "@/icons/mcp";
+import Plug from "@/icons/plug";
+import Server from "@/icons/server";
+import Terminal from "@/icons/terminal";
 import { cn } from "@/lib/cn";
 
 export const Route = createFileRoute("/")({
@@ -17,8 +20,16 @@ type ToolRow = {
 
 type QuickstartBlock = {
   title: string;
-  code: string;
+  lang: "sh" | "json";
   icon: React.ReactNode;
+  code?: string;
+  copy?: string;
+  tabs?: {
+    id: "npm" | "pnpm" | "bun";
+    label: string;
+    code: string;
+    copy?: string;
+  }[];
 };
 
 const tools: ToolRow[] = [
@@ -40,19 +51,52 @@ const tools: ToolRow[] = [
 
 const quickstartBlocks: QuickstartBlock[] = [
   {
-    title: "1) Install",
-    code: "npm i -g web-browser\n\n# or from source\nbun install\nbun run build",
+    title: "Install",
+    lang: "sh",
     icon: <Download3 size={18} />,
+    tabs: [
+      {
+        id: "npm",
+        label: "npm",
+        code: "npm i -g web-browser\n\n# or from source\nbun install\nbun run build",
+        copy: "npm i -g web-browser",
+      },
+      {
+        id: "pnpm",
+        label: "pnpm",
+        code: "pnpm add -g web-browser\n\n# or from source\nbun install\nbun run build",
+        copy: "pnpm add -g web-browser",
+      },
+      {
+        id: "bun",
+        label: "bun",
+        code: "bun add -g web-browser\n\n# or from source\nbun install\nbun run build",
+        copy: "bun add -g web-browser",
+      },
+    ],
   },
   {
-    title: "2) One-time setup",
-    code: "web-browser install-native\n\nchrome://extensions\nLoad unpacked: packages/extension/.output/chrome-mv3",
+    title: "One-time setup",
+    code:
+      "web-browser install-native\n\n# Extension (recommended)\n# 1) Download the extension zip from:\n#    https://github.com/aryasaatvik/web-browser/releases\n# 2) Unzip it\n# 3) chrome://extensions -> Developer mode -> Load unpacked\n#    Select the unzipped folder\n\n# Extension (from source)\nbun run build:extension\n# Load unpacked: packages/extension/.output/chrome-mv3",
+    lang: "sh",
     icon: <Plug size={18} />,
+    copy: "web-browser install-native",
   },
   {
-    title: "3) Run + connect",
+    title: "Run + connect",
     code: "web-browser daemon\n\nMCP: http://127.0.0.1:49321/mcp",
+    lang: "sh",
+    icon: <Mcp size={18} />,
+    copy: "web-browser daemon",
+  },
+  {
+    title: "MCP server config",
+    code:
+      "{\n  \"web-browser\": {\n    \"url\": \"http://127.0.0.1:49321/mcp\"\n  }\n\n  // Stdio-only clients: bridge HTTP -> stdio via mcp-remote\n  // \"web-browser\": {\n  //   \"command\": \"npx\",\n  //   \"args\": [\"-y\", \"mcp-remote@latest\", \"http://127.0.0.1:49321/mcp\"]\n  // }\n}\n",
+    lang: "json",
     icon: <Server size={18} />,
+    copy: "{\n  \"web-browser\": {\n    \"url\": \"http://127.0.0.1:49321/mcp\"\n  }\n}\n",
   },
 ];
 
@@ -64,11 +108,17 @@ function HomePage() {
       <Header />
       <main className="mx-auto w-full max-w-[1040px] px-5 pb-16">
         <Hero />
-        <DocsNav />
         <Section id="quickstart" title="Quickstart">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="flex flex-col gap-4">
             {quickstartBlocks.map((b) => (
-              <CodeCard key={b.title} title={b.title} code={b.code} icon={b.icon} />
+              <CodeCard
+                key={b.title}
+                title={b.title}
+                code={b.code}
+                tabs={b.tabs}
+                lang={b.lang}
+                icon={b.icon}
+              />
             ))}
           </div>
         </Section>
@@ -102,11 +152,12 @@ function HomePage() {
                 </button>
               </div>
               <a
-                className="text-sm text-muted underline-offset-4 hover:underline"
-                href="https://github.com/AryaLabsHQ/browser-mcp"
+                className="inline-flex items-center gap-2 text-sm text-muted hover:text-foreground"
+                href="https://github.com/aryasaatvik/web-browser"
                 target="_blank"
                 rel="noreferrer"
               >
+                <GitHub size={16} className="text-muted" />
                 GitHub
               </a>
             </div>
@@ -170,19 +221,38 @@ function Header() {
             <div className="font-mono text-[12px] text-muted">MCP for browser automation</div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="hidden items-center gap-4 md:flex">
           <a
-            className="text-sm text-muted underline-offset-4 hover:text-foreground hover:underline"
+            className="text-sm text-muted hover:text-foreground"
+            href="#quickstart"
+          >
+            Quickstart
+          </a>
+          <a
+            className="text-sm text-muted hover:text-foreground"
+            href="#architecture"
+          >
+            Architecture
+          </a>
+          <a
+            className="text-sm text-muted hover:text-foreground"
+            href="#tools"
+          >
+            Tools
+          </a>
+          <a
+            className="text-sm text-muted hover:text-foreground"
             href="/privacy"
           >
             Privacy
           </a>
           <a
-            className="text-sm text-muted underline-offset-4 hover:text-foreground hover:underline"
-            href="https://github.com/AryaLabsHQ/browser-mcp"
+            className="inline-flex items-center gap-2 text-sm text-muted hover:text-foreground"
+            href="https://github.com/aryasaatvik/web-browser"
             target="_blank"
             rel="noreferrer"
           >
+            <GitHub size={16} className="text-muted" />
             GitHub
           </a>
         </div>
@@ -192,75 +262,362 @@ function Header() {
 }
 
 function Hero() {
+  const command = "npm i -g web-browser";
+
   return (
-    <div className="pt-12 pb-10 md:pt-16">
-      <div className="max-w-[820px]">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-panel px-3 py-1 text-sm text-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          <span className="font-mono text-[12px]">Streamable HTTP</span>
-          <span className="text-muted/70">|</span>
-          <span className="font-mono text-[12px]">Chrome extension</span>
-          <span className="text-muted/70">|</span>
-          <span className="font-mono text-[12px]">CDP fallback</span>
+    <div className="relative pt-12 pb-10 md:pt-16">
+      <div
+        className="pointer-events-none absolute inset-[-40px] opacity-[0.22]"
+        aria-hidden="true"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)",
+          backgroundSize: "56px 56px",
+          maskImage:
+            "radial-gradient(closest-side at 30% 30%, black 0%, transparent 72%)",
+          WebkitMaskImage:
+            "radial-gradient(closest-side at 30% 30%, black 0%, transparent 72%)",
+        }}
+      />
+
+      <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-2 md:gap-10">
+        <div className="max-w-[820px]">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-panel px-3 py-1 text-sm text-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            <span className="font-mono text-[12px]">Streamable HTTP</span>
+            <span className="text-muted/70">|</span>
+            <span className="font-mono text-[12px]">Chrome extension</span>
+            <span className="text-muted/70">|</span>
+            <span className="font-mono text-[12px]">Direct CDP</span>
+          </div>
+          <h1 className="mt-5 text-balance font-semibold text-4xl leading-[1.05] md:text-6xl">
+            Automate a real browser via MCP.
+          </h1>
+          <p className="mt-4 text-pretty text-[15px] leading-7 text-muted md:text-lg">
+            Web Browser controls Chrome through a local daemon + native bridge +
+            extension, with an optional direct-CDP mode.
+          </p>
+
+          <div className="mt-6 flex flex-col gap-3">
+            <CommandBar command={command} />
+            <div className="flex flex-wrap items-center gap-3">
+              <NavButton variant="primary" href="#quickstart">
+                Get started
+              </NavButton>
+              <NavButton
+                href="https://github.com/aryasaatvik/web-browser#installation"
+                target="_blank"
+                rel="noreferrer"
+                title="Opens the GitHub README installation section (CLI + extension setup)."
+              >
+                <GitHub size={16} className="-ml-0.5" />
+                GitHub install
+              </NavButton>
+            </div>
+          </div>
         </div>
-        <h1 className="mt-5 text-balance font-semibold text-4xl leading-[1.05] md:text-6xl">
-          Automate a real browser via MCP.
-        </h1>
-        <p className="mt-4 text-pretty text-[15px] leading-7 text-muted md:text-lg">
-          Web Browser is an MCP server that controls Chrome through a local
-          daemon + native bridge + extension, with an optional direct-CDP mode.
-        </p>
-        <div className="mt-7 flex flex-wrap items-center gap-3">
-          <a
-            className="inline-flex items-center justify-center rounded-lg bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
-            href="#quickstart"
+
+        <HeroCodePanel />
+      </div>
+    </div>
+  );
+}
+
+function CommandBar({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 900);
+    } catch {
+      // ignore
+    }
+  }, [command]);
+
+  return (
+    <div className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-panel px-3 py-2">
+      <div className="flex items-center gap-2 text-muted">
+        <Terminal size={18} />
+        <div className="font-mono text-[13px] text-foreground">{command}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onCopy}
+        className={cn(
+          "rounded-md border px-2 py-1 font-mono text-[12px] transition-colors",
+          copied
+            ? "border-accent/40 bg-accent/10 text-foreground"
+            : "border-border bg-background text-muted hover:text-foreground",
+        )}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+function HeroCodePanel() {
+  const configCode = `{\n  \"web-browser\": {\n    \"url\": \"http://127.0.0.1:49321/mcp\"\n  }\n\n  // If your client only supports stdio, use mcp-remote:\n  // \"web-browser\": {\n  //   \"command\": \"npx\",\n  //   \"args\": [\"-y\", \"mcp-remote@latest\", \"http://127.0.0.1:49321/mcp\"]\n  // }\n}\n`;
+
+  const endpointCode = `# Start the daemon\nweb-browser daemon\n\n# MCP endpoint (Streamable HTTP)\nhttp://127.0.0.1:49321/mcp\n`;
+
+  const [copied, setCopied] = useState<"config" | "endpoint" | null>(null);
+  const onCopy = useCallback(async (which: "config" | "endpoint") => {
+    try {
+      const text = which === "config" ? configCode : endpointCode;
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      window.setTimeout(() => setCopied(null), 900);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-panel">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.22]"
+        aria-hidden="true"
+        style={{
+          backgroundImage:
+            "radial-gradient(closest-side at 20% 15%, rgba(16,185,129,0.30), transparent 60%)",
+        }}
+      />
+      <div className="relative border-b border-border px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#2a2a2a]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#2a2a2a]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#2a2a2a]" />
+        </div>
+      </div>
+
+      <div className="relative bg-black/50">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2 text-[12px] text-muted">
+          <div className="flex items-center gap-3">
+            <span className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px]">
+              Step 1
+            </span>
+            <span className="font-mono">endpoint</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onCopy("endpoint")}
+            className={cn(
+              "rounded-md border px-2 py-1 font-mono text-[12px] transition-colors",
+              copied === "endpoint"
+                ? "border-accent/40 bg-accent/10 text-foreground"
+                : "border-border bg-background text-muted hover:text-foreground",
+            )}
+            aria-label="Copy endpoint"
           >
-            Quickstart
-          </a>
-          <a
-            className="inline-flex items-center justify-center rounded-lg border border-border bg-panel px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-border/70"
-            href="#tools"
+            {copied === "endpoint" ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div className="max-h-[200px] overflow-auto p-4 font-mono text-[12px] leading-5 text-foreground">
+          <HighlightedCode code={endpointCode} lang="sh" />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-y border-border px-4 py-2 text-[12px] text-muted">
+          <div className="flex items-center gap-3">
+            <span className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px]">
+              Step 2
+            </span>
+            <span className="font-mono">mcp.config.jsonc</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onCopy("config")}
+            className={cn(
+              "rounded-md border px-2 py-1 font-mono text-[12px] transition-colors",
+              copied === "config"
+                ? "border-accent/40 bg-accent/10 text-foreground"
+                : "border-border bg-background text-muted hover:text-foreground",
+            )}
+            aria-label="Copy config"
           >
-            Tools
-          </a>
-          <a
-            className="inline-flex items-center justify-center rounded-lg border border-border bg-panel px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-border/70"
-            href="https://github.com/AryaLabsHQ/browser-mcp#installation"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Install
-          </a>
+            {copied === "config" ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div className="max-h-[260px] overflow-auto p-4 font-mono text-[12px] leading-5 text-foreground">
+          <HighlightedCode code={configCode} lang="json" />
         </div>
       </div>
     </div>
   );
 }
 
-function DocsNav() {
-  const links = useMemo(
-    () => [
-      { href: "#quickstart", label: "Quickstart" },
-      { href: "#architecture", label: "Architecture" },
-      { href: "#tools", label: "Tools" },
-      { href: "#privacy", label: "Privacy" },
-    ],
-    [],
-  );
+function HighlightedCode(props: { code: string; lang: "sh" | "json" }) {
+  const lines = props.code.replace(/\n$/, "").split("\n");
 
   return (
-    <div className="mb-10 flex flex-wrap items-center gap-2">
-      {links.map((l) => (
-        <a
-          key={l.href}
-          className="rounded-full border border-border bg-panel px-3 py-1.5 text-sm text-muted underline-offset-4 hover:text-foreground hover:underline"
-          href={l.href}
-        >
-          {l.label}
-        </a>
+    <div className="grid grid-cols-[34px_1fr] gap-x-3">
+      {lines.map((line, idx) => (
+        <div key={idx} className="contents">
+          <div className="select-none text-right text-[11px] text-muted/70">
+            {String(idx + 1).padStart(2, " ")}
+          </div>
+          <div className="whitespace-pre">
+            {props.lang === "json"
+              ? highlightJsonLine(line, idx)
+              : highlightShellLine(line, idx)}
+          </div>
+        </div>
       ))}
     </div>
   );
+}
+
+function highlightShellLine(line: string, keyBase: number) {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith("#")) {
+    return (
+      <span key={keyBase} className="text-muted">
+        {line}
+      </span>
+    );
+  }
+
+  const parts = line.split(/(\s+)/);
+  let k = keyBase * 1000;
+  return parts.map((p) => {
+    if (p.trim() === "") return <span key={k++}>{p}</span>;
+    if (/^https?:\/\//.test(p)) {
+      return (
+        <span key={k++} className="text-[#5EEAD4]">
+          {p}
+        </span>
+      );
+    }
+    if (p === "web-browser" || p === "npx") {
+      return (
+        <span key={k++} className="text-[#34D399]">
+          {p}
+        </span>
+      );
+    }
+    if (p.startsWith("-")) {
+      return (
+        <span key={k++} className="text-[#FCD34D]">
+          {p}
+        </span>
+      );
+    }
+    return <span key={k++}>{p}</span>;
+  });
+}
+
+function highlightJsonLine(line: string, keyBase: number) {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith("//")) {
+    return (
+      <span key={keyBase} className="text-muted">
+        {line}
+      </span>
+    );
+  }
+
+  // Minimal JSON tokenizer: keys, strings, numbers, booleans/null, punctuation.
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let k = keyBase * 1000;
+
+  const push = (text: string, cls?: string) => {
+    if (!text) return;
+    out.push(
+      <span key={k++} className={cls}>
+        {text}
+      </span>,
+    );
+  };
+
+  const isNumStart = (c: string) => c === "-" || (c >= "0" && c <= "9");
+
+  while (i < line.length) {
+    const c = line[i];
+
+    if (c === " " || c === "\t") {
+      let j = i + 1;
+      while (j < line.length && (line[j] === " " || line[j] === "\t")) j++;
+      push(line.slice(i, j));
+      i = j;
+      continue;
+    }
+
+    if (c === '"' /* string */) {
+      let j = i + 1;
+      let escaped = false;
+      while (j < line.length) {
+        const cc = line[j];
+        if (!escaped && cc === '"') {
+          j++;
+          break;
+        }
+        escaped = !escaped && cc === "\\";
+        j++;
+      }
+      const str = line.slice(i, j);
+
+      // Detect key: "foo": ...
+      let t = j;
+      while (t < line.length && (line[t] === " " || line[t] === "\t")) t++;
+      const isKey = line[t] === ":";
+      push(str, isKey ? "text-[#93C5FD]" : "text-[#5EEAD4]");
+      i = j;
+      continue;
+    }
+
+    if ("{}[]:,".includes(c)) {
+      push(c, "text-muted/80");
+      i++;
+      continue;
+    }
+
+    if (isNumStart(c)) {
+      let j = i + 1;
+      while (j < line.length && /[0-9.]/.test(line[j])) j++;
+      push(line.slice(i, j), "text-[#FCD34D]");
+      i = j;
+      continue;
+    }
+
+    const rest = line.slice(i);
+    const kw =
+      rest.startsWith("true")
+        ? "true"
+        : rest.startsWith("false")
+          ? "false"
+          : rest.startsWith("null")
+            ? "null"
+            : null;
+    if (kw) {
+      push(kw, "text-[#34D399]");
+      i += kw.length;
+      continue;
+    }
+
+    // Fallback: emit one char
+    push(c);
+    i++;
+  }
+
+  return out;
+}
+
+function NavButton(
+  props: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    variant?: "primary" | "secondary";
+  },
+) {
+  const { variant = "secondary", className, ...rest } = props;
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors";
+  const styles =
+    variant === "primary"
+      ? "border-transparent bg-foreground text-background hover:bg-foreground/90"
+      : "border-border bg-panel text-foreground hover:border-border/70";
+  return <a className={cn(base, styles, className)} {...rest} />;
 }
 
 function Section({
@@ -285,27 +642,45 @@ function Section({
 function CodeCard({
   title,
   code,
+  lang,
+  tabs,
+  copy,
   icon,
 }: {
   title: string;
-  code: string;
+  code?: string;
+  lang: "sh" | "json";
+  tabs?: {
+    id: "npm" | "pnpm" | "bun";
+    label: string;
+    code: string;
+    copy?: string;
+  }[];
+  copy?: string;
   icon?: React.ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState<"npm" | "pnpm" | "bun">(tabs?.[0]?.id ?? "npm");
+
+  const activeCode = tabs ? tabs.find((t) => t.id === tab)?.code ?? tabs[0].code : code ?? "";
+  const copyText =
+    tabs
+      ? tabs.find((t) => t.id === tab)?.copy ?? firstShellCommand(activeCode) ?? activeCode
+      : copy ?? (lang === "sh" ? firstShellCommand(activeCode) ?? activeCode : activeCode);
 
   const onCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(copyText);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 900);
     } catch {
       // ignore
     }
-  }, [code]);
+  }, [copyText]);
 
   return (
     <div className="rounded-xl border border-border bg-panel p-4 md:p-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex items-center gap-3">
         <div className="flex items-center gap-2 font-mono text-[12px] text-muted">
           {icon ? (
             <span className="grid h-7 w-7 place-items-center rounded-md border border-border bg-background text-muted transition-colors hover:text-foreground">
@@ -314,29 +689,61 @@ function CodeCard({
           ) : null}
           <span>{title}</span>
         </div>
+        {tabs ? (
+          <div className="hidden items-center gap-1 rounded-full border border-border bg-background p-1 sm:flex">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-mono text-[12px] transition-colors",
+                  tab === t.id
+                    ? "bg-panel text-foreground"
+                    : "text-muted hover:text-foreground",
+                )}
+                aria-label={`Show ${t.label} install`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={onCopy}
           className={cn(
-            "rounded-md border px-2 py-1 font-mono text-[12px] transition-colors",
+            "ml-auto rounded-md border px-2 py-1 font-mono text-[12px] transition-colors",
             copied
               ? "border-accent/40 bg-accent/10 text-foreground"
               : "border-border bg-background text-muted hover:text-foreground",
           )}
+          title="Copies the recommended command/snippet (not the entire block)."
         >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <CodeBlock code={code} />
+      <CodeBlock code={activeCode} lang={lang} />
     </div>
   );
 }
 
-function CodeBlock({ code }: { code: string }) {
+function firstShellCommand(code: string) {
+  // Pick the first non-empty, non-comment line as the "recommended" command.
+  for (const raw of code.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("#")) continue;
+    return line;
+  }
+  return null;
+}
+
+function CodeBlock({ code, lang }: { code: string; lang: "sh" | "json" }) {
   return (
-    <pre className="overflow-auto rounded-lg border border-border bg-black/60 p-3 font-mono text-[12px] leading-5 text-foreground">
-      <code>{code}</code>
-    </pre>
+    <div className="overflow-auto rounded-lg border border-border bg-black/60 p-3 font-mono text-[12px] leading-5 text-foreground">
+      <HighlightedCode code={code} lang={lang} />
+    </div>
   );
 }
 
@@ -354,18 +761,19 @@ function Footer() {
     <div className="mt-10 border-t border-border pt-8 text-sm text-muted">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="font-mono text-[12px]">
-          {new Date().getFullYear()} Web Browser
+          Web Browser
         </div>
         <div className="flex items-center gap-4">
           <a className="hover:text-foreground" href="/privacy">
             Privacy
           </a>
           <a
-            className="hover:text-foreground"
-            href="https://github.com/AryaLabsHQ/browser-mcp"
+            className="inline-flex items-center gap-2 hover:text-foreground"
+            href="https://github.com/aryasaatvik/web-browser"
             target="_blank"
             rel="noreferrer"
           >
+            <GitHub size={16} className="text-muted" />
             GitHub
           </a>
           <a className="hover:text-foreground" href="#quickstart">

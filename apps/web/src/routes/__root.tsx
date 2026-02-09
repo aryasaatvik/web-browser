@@ -14,12 +14,12 @@ export const Route = createRootRoute({
       },
       {
         name: "description",
-        content: "MCP server for browser automation via Chrome extension.",
+        content: "Let agents access your web browser via MCP.",
       },
       { property: "og:title", content: "Web Browser" },
       {
         property: "og:description",
-        content: "MCP server for browser automation via Chrome extension.",
+        content: "Let agents access your web browser via MCP.",
       },
       { property: "og:url", content: "https://web-browser.arya.sh" },
       { property: "og:type", content: "website" },
@@ -27,7 +27,7 @@ export const Route = createRootRoute({
       { name: "twitter:title", content: "Web Browser" },
       {
         name: "twitter:description",
-        content: "MCP server for browser automation via Chrome extension.",
+        content: "Let agents access your web browser via MCP.",
       },
     ],
     links: [
