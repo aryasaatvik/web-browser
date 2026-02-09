@@ -8,23 +8,30 @@ type PackageKey = "core" | "web-browser" | "extension";
 
 function usage(): never {
   console.error(`Usage:
-  ./script/release <core|web-browser|extension> <patch|minor|major>
-  ./script/release <core|web-browser|extension> version <X.Y.Z>
+  bun scripts/release.ts <core|web-browser|extension> <patch|minor|major> [--dry-run]
+  bun scripts/release.ts <core|web-browser|extension> version <X.Y.Z> [--dry-run]
+
+Examples:
+  bun scripts/release.ts core patch --dry-run
+  bun scripts/release.ts web-browser minor
 `);
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): { pkg: PackageKey; bump: "patch" | "minor" | "major" | "version"; version?: string } {
-  const pkg = argv[0] as PackageKey | undefined;
-  const bump = argv[1] as any;
+function parseArgs(argv: string[]): { pkg: PackageKey; bump: "patch" | "minor" | "major" | "version"; version?: string; dryRun: boolean } {
+  const dryRun = argv.includes("--dry-run");
+  const filtered = argv.filter((a) => a !== "--dry-run");
+
+  const pkg = filtered[0] as PackageKey | undefined;
+  const bump = filtered[1] as any;
   if (!pkg || !["core", "web-browser", "extension"].includes(pkg)) usage();
   if (!bump || !["patch", "minor", "major", "version"].includes(bump)) usage();
   if (bump === "version") {
-    const version = argv[2];
+    const version = filtered[2];
     if (!version || !/^\d+\.\d+\.\d+$/.test(version)) usage();
-    return { pkg, bump, version };
+    return { pkg, bump, version, dryRun };
   }
-  return { pkg, bump };
+  return { pkg, bump, dryRun };
 }
 
 function inc(v: string, bump: "patch" | "minor" | "major"): string {
@@ -59,7 +66,7 @@ async function latestTag(prefix: string): Promise<string | null> {
 }
 
 async function main() {
-  const { pkg, bump, version } = parseArgs(process.argv.slice(2));
+  const { pkg, bump, version, dryRun } = parseArgs(process.argv.slice(2));
   await ensureCleanTree();
 
   const repoRoot = path.resolve(import.meta.dir, "..");
@@ -73,12 +80,17 @@ async function main() {
   const nextVersion = bump === "version" ? (version as string) : inc(prevVersion, bump);
   const tag = `${prefix}-v${nextVersion}`;
 
+  const tagExists = (await $`git tag --list ${tag}`.text()).trim().length > 0;
+  if (tagExists) {
+    throw new Error(`Tag already exists: ${tag}`);
+  }
+
   // Update the relevant package.json version.
   const filesToAdd: string[] = [];
   if (pkg === "core") {
     const json = await readJson(corePkgPath);
     json.version = nextVersion;
-    await writeJson(corePkgPath, json);
+    if (!dryRun) await writeJson(corePkgPath, json);
     filesToAdd.push("packages/core/package.json");
   } else if (pkg === "web-browser") {
     const json = await readJson(hostPkgPath);
@@ -89,13 +101,26 @@ async function main() {
     const coreVersion = coreJson.version as string;
     if (!json.dependencies) json.dependencies = {};
     json.dependencies["@web-browser/core"] = `^${coreVersion}`;
-    await writeJson(hostPkgPath, json);
+    if (!dryRun) await writeJson(hostPkgPath, json);
     filesToAdd.push("packages/native-host/package.json");
   } else {
     const json = await readJson(extPkgPath);
     json.version = nextVersion;
-    await writeJson(extPkgPath, json);
+    if (!dryRun) await writeJson(extPkgPath, json);
     filesToAdd.push("packages/extension/package.json");
+  }
+
+  if (dryRun) {
+    console.log("dry-run: would create release");
+    console.log(`  pkg:        ${pkg}`);
+    console.log(`  prev tag:   ${tagPrev ?? "(none)"}`);
+    console.log(`  version:    ${nextVersion}`);
+    console.log(`  commit:     release(${pkg}): v${nextVersion}`);
+    console.log(`  tag:        ${tag}`);
+    console.log(`  stage:      ${filesToAdd.join(", ")}`);
+    console.log("");
+    console.log("Run without --dry-run to apply.");
+    return;
   }
 
   // Commit + tag.

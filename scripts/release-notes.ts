@@ -3,7 +3,7 @@
 import { $ } from "bun";
 
 function usage(): never {
-  console.error("Usage: bun script/release-notes.ts --tag <tag>");
+  console.error("Usage: bun scripts/release-notes.ts --tag <tag>");
   process.exit(2);
 }
 
@@ -57,4 +57,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

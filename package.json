@@ -19,7 +19,7 @@
     "test:coverage": "vitest run --coverage",
     "install:native": "./scripts/install.sh",
     "uninstall:native": "./scripts/install.sh --uninstall",
-    "release": "./script/release"
+    "release": "bun scripts/release.ts"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.18",

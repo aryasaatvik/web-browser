@@ -115,7 +115,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bun script/release-notes.ts --tag "${{ steps.target.outputs.tag }}" > release-notes.md
+          bun scripts/release-notes.ts --tag "${{ steps.target.outputs.tag }}" > release-notes.md
           echo "path=release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release (no assets)
