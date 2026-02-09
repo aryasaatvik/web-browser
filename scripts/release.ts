@@ -8,19 +8,27 @@ type PackageKey = "core" | "web-browser" | "extension";
 
 function usage(): never {
   console.error(`Usage:
-  bun scripts/release.ts <core|web-browser|extension> <patch|minor|major> [--dry-run]
-  bun scripts/release.ts <core|web-browser|extension> version <X.Y.Z> [--dry-run]
+  bun scripts/release.ts <core|web-browser|extension> <patch|minor|major> [--dry-run] [--no-push]
+  bun scripts/release.ts <core|web-browser|extension> version <X.Y.Z> [--dry-run] [--no-push]
 
 Examples:
   bun scripts/release.ts core patch --dry-run
+  bun scripts/release.ts core patch --no-push
   bun scripts/release.ts web-browser minor
 `);
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): { pkg: PackageKey; bump: "patch" | "minor" | "major" | "version"; version?: string; dryRun: boolean } {
+function parseArgs(argv: string[]): {
+  pkg: PackageKey;
+  bump: "patch" | "minor" | "major" | "version";
+  version?: string;
+  dryRun: boolean;
+  noPush: boolean;
+} {
   const dryRun = argv.includes("--dry-run");
-  const filtered = argv.filter((a) => a !== "--dry-run");
+  const noPush = argv.includes("--no-push");
+  const filtered = argv.filter((a) => a !== "--dry-run" && a !== "--no-push");
 
   const pkg = filtered[0] as PackageKey | undefined;
   const bump = filtered[1] as any;
@@ -29,9 +37,9 @@ function parseArgs(argv: string[]): { pkg: PackageKey; bump: "patch" | "minor" |
   if (bump === "version") {
     const version = filtered[2];
     if (!version || !/^\d+\.\d+\.\d+$/.test(version)) usage();
-    return { pkg, bump, version, dryRun };
+    return { pkg, bump, version, dryRun, noPush };
   }
-  return { pkg, bump, dryRun };
+  return { pkg, bump, dryRun, noPush };
 }
 
 function inc(v: string, bump: "patch" | "minor" | "major"): string {
@@ -66,7 +74,7 @@ async function latestTag(prefix: string): Promise<string | null> {
 }
 
 async function main() {
-  const { pkg, bump, version, dryRun } = parseArgs(process.argv.slice(2));
+  const { pkg, bump, version, dryRun, noPush } = parseArgs(process.argv.slice(2));
   await ensureCleanTree();
 
   const repoRoot = path.resolve(import.meta.dir, "..");
@@ -118,6 +126,7 @@ async function main() {
     console.log(`  commit:     release(${pkg}): v${nextVersion}`);
     console.log(`  tag:        ${tag}`);
     console.log(`  stage:      ${filesToAdd.join(", ")}`);
+    console.log(`  push:       ${noPush ? "no" : "yes"}`);
     console.log("");
     console.log("Run without --dry-run to apply.");
     return;
@@ -140,7 +149,9 @@ async function main() {
 
   // Push if origin exists.
   const remotes = await $`git remote`.text();
-  if (remotes.split("\n").map((r) => r.trim()).includes("origin")) {
+  if (noPush) {
+    console.log(`Created tag ${tag}. Skipping push (--no-push).`);
+  } else if (remotes.split("\n").map((r) => r.trim()).includes("origin")) {
     await $`git push origin HEAD --tags`;
   } else {
     console.log(`Created commit and tag ${tag}. No origin remote found; push manually.`);
