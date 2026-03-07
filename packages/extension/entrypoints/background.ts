@@ -51,7 +51,17 @@ interface ConsoleMessage {
   lineNumber?: number;
 }
 
-interface NetworkRequest {
+type NetworkHeaderValue = string | number | boolean;
+
+interface NetworkBody {
+  content: string;
+  base64Encoded: boolean;
+  mimeType?: string;
+  size?: number;
+  error?: string;
+}
+
+interface NetworkRequestRecord {
   requestId: string;
   url: string;
   method: string;
@@ -60,17 +70,122 @@ interface NetworkRequest {
   type?: string;
   timestamp: number;
   responseTimestamp?: number;
+  requestHeaders?: Record<string, NetworkHeaderValue>;
+  responseHeaders?: Record<string, NetworkHeaderValue>;
+  mimeType?: string;
+  endTimestamp?: number;
+  durationMs?: number;
+  encodedDataLength?: number;
+  failed?: boolean;
+  failureReason?: string;
+  timing?: Record<string, unknown>;
+}
+
+interface NetworkRequestResult {
+  requestId: string;
+  url: string;
+  method: string;
+  status?: number;
+  statusText?: string;
+  type?: string;
+  timestamp: number;
+  responseTimestamp?: number;
+  requestHeaders?: Record<string, NetworkHeaderValue>;
+  responseHeaders?: Record<string, NetworkHeaderValue>;
+  requestBody?: NetworkBody;
+  responseBody?: NetworkBody;
+  mimeType?: string;
+  endTimestamp?: number;
+  durationMs?: number;
+  encodedDataLength?: number;
+  failed?: boolean;
+  failureReason?: string;
+  timing?: Record<string, unknown>;
 }
 
 const MAX_CONSOLE_MESSAGES = 500;
 const MAX_NETWORK_REQUESTS = 500;
 const consoleMessagesByTab = new Map<number, ConsoleMessage[]>();
-const networkRequestsByTab = new Map<number, NetworkRequest[]>();
+const networkRequestsByTab = new Map<number, NetworkRequestRecord[]>();
 const monitoringEnabledTabs = new Set<number>();
 
 function pushBounded<T>(arr: T[], item: T, max: number): void {
   arr.push(item);
   if (arr.length > max) arr.splice(0, arr.length - max);
+}
+
+function normalizeHeaders(
+  headers: Record<string, unknown> | undefined
+): Record<string, NetworkHeaderValue> | undefined {
+  if (!headers) return undefined;
+
+  const normalized: Record<string, NetworkHeaderValue> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      normalized[key] = value;
+      continue;
+    }
+
+    if (value !== null && value !== undefined) {
+      normalized[key] = String(value);
+    }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function mergeHeaders(
+  existing: Record<string, NetworkHeaderValue> | undefined,
+  next: Record<string, NetworkHeaderValue> | undefined
+): Record<string, NetworkHeaderValue> | undefined {
+  if (!existing) return next;
+  if (!next) return existing;
+  return { ...existing, ...next };
+}
+
+function getMimeTypeFromHeaders(
+  headers: Record<string, NetworkHeaderValue> | undefined
+): string | undefined {
+  if (!headers) return undefined;
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === "content-type" && typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function computeDurationMs(start: number, end?: number): number | undefined {
+  if (typeof end !== "number") return undefined;
+  return Math.max(0, end - start);
+}
+
+function computeBodySize(content: string, base64Encoded: boolean): number {
+  if (!base64Encoded) {
+    return new TextEncoder().encode(content).byteLength;
+  }
+
+  return Uint8Array.from(atob(content), (char) => char.charCodeAt(0)).byteLength;
+}
+
+function upsertNetworkRequest(tabId: number, requestId: string): NetworkRequestRecord {
+  const list = networkRequestsByTab.get(tabId) || [];
+  let request = list.find((entry) => entry.requestId === requestId);
+
+  if (!request) {
+    request = {
+      requestId,
+      url: "",
+      method: "GET",
+      timestamp: Date.now(),
+    };
+    pushBounded(list, request, MAX_NETWORK_REQUESTS);
+    networkRequestsByTab.set(tabId, list);
+  }
+
+  return request;
 }
 
 async function ensureMonitoring(tabId: number): Promise<void> {
@@ -500,6 +615,10 @@ async function handleNetworkGet(cmd: Command): Promise<Response> {
   const urlPattern = cmd.urlPattern as string | undefined;
   const limit = cmd.limit as number | undefined;
   const clear = cmd.clear as boolean | undefined;
+  const includeRequestBody = cmd.includeRequestBody as boolean | undefined;
+  const includeResponseBody = cmd.includeResponseBody as boolean | undefined;
+  const includeHeaders = cmd.includeHeaders as boolean | undefined;
+  const includeTiming = cmd.includeTiming as boolean | undefined;
 
   let requests = [...(networkRequestsByTab.get(tabId) || [])];
   if (urlPattern) {
@@ -510,7 +629,128 @@ async function handleNetworkGet(cmd: Command): Promise<Response> {
 
   if (clear) networkRequestsByTab.set(tabId, []);
 
-  return success(cmd.id, { requests, count: requests.length });
+  const enrichedRequests = await Promise.all(
+    requests.map((request) =>
+      buildNetworkRequestResult(tabId, request, {
+        includeRequestBody,
+        includeResponseBody,
+        includeHeaders,
+        includeTiming,
+      })
+    )
+  );
+
+  return success(cmd.id, { requests: enrichedRequests, count: enrichedRequests.length });
+}
+
+async function buildNetworkRequestResult(
+  tabId: number,
+  request: NetworkRequestRecord,
+  options: {
+    includeRequestBody?: boolean;
+    includeResponseBody?: boolean;
+    includeHeaders?: boolean;
+    includeTiming?: boolean;
+  }
+): Promise<NetworkRequestResult> {
+  const result: NetworkRequestResult = {
+    requestId: request.requestId,
+    url: request.url,
+    method: request.method,
+    status: request.status,
+    statusText: request.statusText,
+    type: request.type,
+    timestamp: request.timestamp,
+    responseTimestamp: request.responseTimestamp,
+  };
+
+  if (options.includeHeaders) {
+    result.requestHeaders = request.requestHeaders;
+    result.responseHeaders = request.responseHeaders;
+    if (request.mimeType) {
+      result.mimeType = request.mimeType;
+    }
+  }
+
+  if (options.includeTiming) {
+    result.endTimestamp = request.endTimestamp;
+    result.durationMs = request.durationMs ?? computeDurationMs(request.timestamp, request.endTimestamp);
+    result.encodedDataLength = request.encodedDataLength;
+    result.failed = request.failed;
+    result.failureReason = request.failureReason;
+    result.timing = request.timing;
+    if (request.mimeType) {
+      result.mimeType = request.mimeType;
+    }
+  }
+
+  if (options.includeRequestBody) {
+    result.requestBody = await getRequestBody(tabId, request);
+  }
+
+  if (options.includeResponseBody) {
+    result.responseBody = await getResponseBody(tabId, request);
+    if (request.mimeType) {
+      result.mimeType = request.mimeType;
+    }
+  }
+
+  return result;
+}
+
+async function getRequestBody(tabId: number, request: NetworkRequestRecord): Promise<NetworkBody> {
+  const mimeType = getMimeTypeFromHeaders(request.requestHeaders);
+
+  try {
+    const result = await cdp.sendCommand<{ postData?: string }>(tabId, "Network.getRequestPostData", {
+      requestId: request.requestId,
+    });
+    const content = result.postData || "";
+
+    return {
+      content,
+      base64Encoded: false,
+      mimeType,
+      size: computeBodySize(content, false),
+    };
+  } catch (err) {
+    return {
+      content: "",
+      base64Encoded: false,
+      mimeType,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function getResponseBody(tabId: number, request: NetworkRequestRecord): Promise<NetworkBody> {
+  const mimeType = request.mimeType || getMimeTypeFromHeaders(request.responseHeaders);
+
+  try {
+    const result = await cdp.sendCommand<{ body?: string; base64Encoded?: boolean }>(
+      tabId,
+      "Network.getResponseBody",
+      {
+        requestId: request.requestId,
+      }
+    );
+    const content = result.body || "";
+    const base64Encoded = Boolean(result.base64Encoded);
+
+    return {
+      content,
+      base64Encoded,
+      mimeType,
+      size: computeBodySize(content, base64Encoded),
+    };
+  } catch (err) {
+    return {
+      content: "",
+      base64Encoded: false,
+      mimeType,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 // Cookie handlers
@@ -1248,44 +1488,103 @@ export default defineBackground({
       if (method === "Network.requestWillBeSent") {
         const p = params as {
           requestId?: string;
-          request?: { url?: string; method?: string };
+          request?: {
+            url?: string;
+            method?: string;
+            headers?: Record<string, unknown>;
+          };
           type?: string;
           timestamp?: number;
         };
         if (!p.requestId || !p.request) return;
 
-        const list = networkRequestsByTab.get(tabId) || [];
-        pushBounded(
-          list,
-          {
-            requestId: p.requestId,
-            url: p.request.url || "",
-            method: p.request.method || "GET",
-            type: p.type,
-            timestamp: (p.timestamp as number | undefined) || Date.now(),
-          },
-          MAX_NETWORK_REQUESTS
-        );
-        networkRequestsByTab.set(tabId, list);
+        const req = upsertNetworkRequest(tabId, p.requestId);
+        req.url = p.request.url || req.url;
+        req.method = p.request.method || req.method;
+        req.type = p.type || req.type;
+        req.timestamp = (p.timestamp as number | undefined) || req.timestamp || Date.now();
+        req.requestHeaders = mergeHeaders(req.requestHeaders, normalizeHeaders(p.request.headers));
+        return;
+      }
+
+      if (method === "Network.requestWillBeSentExtraInfo") {
+        const p = params as {
+          requestId?: string;
+          headers?: Record<string, unknown>;
+        };
+        if (!p.requestId) return;
+
+        const req = upsertNetworkRequest(tabId, p.requestId);
+        req.requestHeaders = mergeHeaders(req.requestHeaders, normalizeHeaders(p.headers));
         return;
       }
 
       if (method === "Network.responseReceived") {
         const p = params as {
           requestId?: string;
-          response?: { status?: number; statusText?: string };
+          response?: {
+            status?: number;
+            statusText?: string;
+            headers?: Record<string, unknown>;
+            mimeType?: string;
+            timing?: Record<string, unknown>;
+          };
           timestamp?: number;
         };
         if (!p.requestId || !p.response) return;
 
-        const list = networkRequestsByTab.get(tabId) || [];
-        const req = list.find((r) => r.requestId === p.requestId);
-        if (req) {
-          req.status = p.response.status;
-          req.statusText = p.response.statusText;
-          req.responseTimestamp = (p.timestamp as number | undefined) || Date.now();
-        }
-        networkRequestsByTab.set(tabId, list);
+        const req = upsertNetworkRequest(tabId, p.requestId);
+        req.status = p.response.status;
+        req.statusText = p.response.statusText;
+        req.responseTimestamp = (p.timestamp as number | undefined) || Date.now();
+        req.responseHeaders = mergeHeaders(req.responseHeaders, normalizeHeaders(p.response.headers));
+        req.mimeType =
+          p.response.mimeType || req.mimeType || getMimeTypeFromHeaders(req.responseHeaders);
+        req.timing = p.response.timing || req.timing;
+        return;
+      }
+
+      if (method === "Network.responseReceivedExtraInfo") {
+        const p = params as {
+          requestId?: string;
+          headers?: Record<string, unknown>;
+        };
+        if (!p.requestId) return;
+
+        const req = upsertNetworkRequest(tabId, p.requestId);
+        req.responseHeaders = mergeHeaders(req.responseHeaders, normalizeHeaders(p.headers));
+        req.mimeType = req.mimeType || getMimeTypeFromHeaders(req.responseHeaders);
+        return;
+      }
+
+      if (method === "Network.loadingFinished") {
+        const p = params as {
+          requestId?: string;
+          timestamp?: number;
+          encodedDataLength?: number;
+        };
+        if (!p.requestId) return;
+
+        const req = upsertNetworkRequest(tabId, p.requestId);
+        req.endTimestamp = (p.timestamp as number | undefined) || Date.now();
+        req.encodedDataLength = p.encodedDataLength;
+        req.durationMs = computeDurationMs(req.timestamp, req.endTimestamp);
+        return;
+      }
+
+      if (method === "Network.loadingFailed") {
+        const p = params as {
+          requestId?: string;
+          timestamp?: number;
+          errorText?: string;
+        };
+        if (!p.requestId) return;
+
+        const req = upsertNetworkRequest(tabId, p.requestId);
+        req.failed = true;
+        req.failureReason = p.errorText || "Request failed";
+        req.endTimestamp = (p.timestamp as number | undefined) || Date.now();
+        req.durationMs = computeDurationMs(req.timestamp, req.endTimestamp);
       }
     });
 

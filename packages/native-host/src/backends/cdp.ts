@@ -73,7 +73,17 @@ interface ConsoleMessage {
   lineNumber?: number;
 }
 
-interface NetworkRequest {
+type NetworkHeaderValue = string | number | boolean;
+
+interface NetworkBody {
+  content: string;
+  base64Encoded: boolean;
+  mimeType?: string;
+  size?: number;
+  error?: string;
+}
+
+interface NetworkRequestRecord {
   requestId: string;
   url: string;
   method: string;
@@ -82,6 +92,37 @@ interface NetworkRequest {
   type?: string;
   timestamp: number;
   responseTimestamp?: number;
+  requestHeaders?: Record<string, NetworkHeaderValue>;
+  responseHeaders?: Record<string, NetworkHeaderValue>;
+  mimeType?: string;
+  endTimestamp?: number;
+  durationMs?: number;
+  encodedDataLength?: number;
+  failed?: boolean;
+  failureReason?: string;
+  timing?: Record<string, unknown>;
+}
+
+interface NetworkRequestResult {
+  requestId: string;
+  url: string;
+  method: string;
+  status?: number;
+  statusText?: string;
+  type?: string;
+  timestamp: number;
+  responseTimestamp?: number;
+  requestHeaders?: Record<string, NetworkHeaderValue>;
+  responseHeaders?: Record<string, NetworkHeaderValue>;
+  requestBody?: NetworkBody;
+  responseBody?: NetworkBody;
+  mimeType?: string;
+  endTimestamp?: number;
+  durationMs?: number;
+  encodedDataLength?: number;
+  failed?: boolean;
+  failureReason?: string;
+  timing?: Record<string, unknown>;
 }
 
 interface PendingRequest {
@@ -141,6 +182,60 @@ interface TabData {
   title: string;
 }
 
+function normalizeHeaders(
+  headers: Record<string, unknown> | undefined
+): Record<string, NetworkHeaderValue> | undefined {
+  if (!headers) return undefined;
+
+  const normalized: Record<string, NetworkHeaderValue> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      normalized[key] = value;
+      continue;
+    }
+
+    if (value !== null && value !== undefined) {
+      normalized[key] = String(value);
+    }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function mergeHeaders(
+  existing: Record<string, NetworkHeaderValue> | undefined,
+  next: Record<string, NetworkHeaderValue> | undefined
+): Record<string, NetworkHeaderValue> | undefined {
+  if (!existing) return next;
+  if (!next) return existing;
+  return { ...existing, ...next };
+}
+
+function getMimeTypeFromHeaders(headers: Record<string, NetworkHeaderValue> | undefined): string | undefined {
+  if (!headers) return undefined;
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'content-type' && typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function computeDurationMs(start: number, end?: number): number | undefined {
+  if (typeof end !== 'number') return undefined;
+  return Math.max(0, end - start);
+}
+
+function computeBodySize(content: string, base64Encoded: boolean): number {
+  if (!base64Encoded) {
+    return Buffer.byteLength(content, 'utf8');
+  }
+
+  return Buffer.from(content, 'base64').byteLength;
+}
+
 export class CdpBackend implements BrowserBackend {
   readonly name = 'cdp' as const;
 
@@ -156,7 +251,7 @@ export class CdpBackend implements BrowserBackend {
   private consoleEnabled = false;
 
   // Network monitoring
-  private networkRequests: NetworkRequest[] = [];
+  private networkRequests: NetworkRequestRecord[] = [];
   private networkEnabled = false;
 
   // Tab management
@@ -272,8 +367,20 @@ export class CdpBackend implements BrowserBackend {
       case 'Network.requestWillBeSent':
         this.handleNetworkRequest(params);
         break;
+      case 'Network.requestWillBeSentExtraInfo':
+        this.handleNetworkRequestExtraInfo(params);
+        break;
       case 'Network.responseReceived':
         this.handleNetworkResponse(params);
+        break;
+      case 'Network.responseReceivedExtraInfo':
+        this.handleNetworkResponseExtraInfo(params);
+        break;
+      case 'Network.loadingFinished':
+        this.handleNetworkLoadingFinished(params);
+        break;
+      case 'Network.loadingFailed':
+        this.handleNetworkLoadingFailed(params);
         break;
     }
   }
@@ -307,23 +414,38 @@ export class CdpBackend implements BrowserBackend {
     });
   }
 
+  private upsertNetworkRequest(requestId: string): NetworkRequestRecord {
+    let request = this.networkRequests.find((entry) => entry.requestId === requestId);
+    if (request) return request;
+
+    request = {
+      requestId,
+      url: '',
+      method: 'GET',
+      timestamp: Date.now(),
+    };
+    this.networkRequests.push(request);
+    return request;
+  }
+
   private handleNetworkRequest(params: Record<string, unknown>): void {
     const request = params.request as
       | {
           url?: string;
           method?: string;
+          headers?: Record<string, unknown>;
         }
       | undefined;
+    const requestId = params.requestId as string | undefined;
 
-    if (!request) return;
+    if (!request || !requestId) return;
 
-    this.networkRequests.push({
-      requestId: params.requestId as string,
-      url: request.url || '',
-      method: request.method || 'GET',
-      type: params.type as string | undefined,
-      timestamp: (params.timestamp as number) || Date.now(),
-    });
+    const entry = this.upsertNetworkRequest(requestId);
+    entry.url = request.url || entry.url;
+    entry.method = request.method || entry.method;
+    entry.type = (params.type as string | undefined) || entry.type;
+    entry.timestamp = (params.timestamp as number) || entry.timestamp || Date.now();
+    entry.requestHeaders = mergeHeaders(entry.requestHeaders, normalizeHeaders(request.headers));
   }
 
   private handleNetworkResponse(params: Record<string, unknown>): void {
@@ -332,18 +454,63 @@ export class CdpBackend implements BrowserBackend {
       | {
           status?: number;
           statusText?: string;
+          headers?: Record<string, unknown>;
+          mimeType?: string;
+          timing?: Record<string, unknown>;
         }
       | undefined;
 
-    if (!response) return;
+    if (!requestId || !response) return;
 
-    // Find and update the matching request
-    const request = this.networkRequests.find((r) => r.requestId === requestId);
-    if (request) {
-      request.status = response.status;
-      request.statusText = response.statusText;
-      request.responseTimestamp = (params.timestamp as number) || Date.now();
-    }
+    const entry = this.upsertNetworkRequest(requestId);
+    entry.status = response.status;
+    entry.statusText = response.statusText;
+    entry.responseTimestamp = (params.timestamp as number) || Date.now();
+    entry.responseHeaders = mergeHeaders(entry.responseHeaders, normalizeHeaders(response.headers));
+    entry.mimeType = response.mimeType || entry.mimeType || getMimeTypeFromHeaders(entry.responseHeaders);
+    entry.timing = response.timing || entry.timing;
+  }
+
+  private handleNetworkRequestExtraInfo(params: Record<string, unknown>): void {
+    const requestId = params.requestId as string | undefined;
+    const headers = normalizeHeaders(params.headers as Record<string, unknown> | undefined);
+
+    if (!requestId || !headers) return;
+
+    const entry = this.upsertNetworkRequest(requestId);
+    entry.requestHeaders = mergeHeaders(entry.requestHeaders, headers);
+  }
+
+  private handleNetworkResponseExtraInfo(params: Record<string, unknown>): void {
+    const requestId = params.requestId as string | undefined;
+    const headers = normalizeHeaders(params.headers as Record<string, unknown> | undefined);
+
+    if (!requestId || !headers) return;
+
+    const entry = this.upsertNetworkRequest(requestId);
+    entry.responseHeaders = mergeHeaders(entry.responseHeaders, headers);
+    entry.mimeType = entry.mimeType || getMimeTypeFromHeaders(entry.responseHeaders);
+  }
+
+  private handleNetworkLoadingFinished(params: Record<string, unknown>): void {
+    const requestId = params.requestId as string | undefined;
+    if (!requestId) return;
+
+    const entry = this.upsertNetworkRequest(requestId);
+    entry.endTimestamp = (params.timestamp as number) || Date.now();
+    entry.encodedDataLength = params.encodedDataLength as number | undefined;
+    entry.durationMs = computeDurationMs(entry.timestamp, entry.endTimestamp);
+  }
+
+  private handleNetworkLoadingFailed(params: Record<string, unknown>): void {
+    const requestId = params.requestId as string | undefined;
+    if (!requestId) return;
+
+    const entry = this.upsertNetworkRequest(requestId);
+    entry.failed = true;
+    entry.failureReason = (params.errorText as string | undefined) || 'Request failed';
+    entry.endTimestamp = (params.timestamp as number) || Date.now();
+    entry.durationMs = computeDurationMs(entry.timestamp, entry.endTimestamp);
   }
 
   private async sendCommand(method: string, params?: Record<string, unknown>): Promise<unknown> {
@@ -777,13 +944,17 @@ export class CdpBackend implements BrowserBackend {
     return { messages, count: messages.length };
   }
 
-  private getNetworkRequests(args: Record<string, unknown>): {
-    requests: NetworkRequest[];
+  private async getNetworkRequests(args: Record<string, unknown>): Promise<{
+    requests: NetworkRequestResult[];
     count: number;
-  } {
+  }> {
     const clear = args.clear as boolean | undefined;
     const urlPattern = args.urlPattern as string | undefined;
     const limit = args.limit as number | undefined;
+    const includeRequestBody = args.includeRequestBody as boolean | undefined;
+    const includeResponseBody = args.includeResponseBody as boolean | undefined;
+    const includeHeaders = args.includeHeaders as boolean | undefined;
+    const includeTiming = args.includeTiming as boolean | undefined;
 
     let requests = [...this.networkRequests];
 
@@ -803,7 +974,123 @@ export class CdpBackend implements BrowserBackend {
       this.networkRequests = [];
     }
 
-    return { requests, count: requests.length };
+    const enrichedRequests = await Promise.all(
+      requests.map((request) =>
+        this.buildNetworkRequestResult(request, {
+          includeRequestBody,
+          includeResponseBody,
+          includeHeaders,
+          includeTiming,
+        })
+      )
+    );
+
+    return { requests: enrichedRequests, count: enrichedRequests.length };
+  }
+
+  private async buildNetworkRequestResult(
+    request: NetworkRequestRecord,
+    options: {
+      includeRequestBody?: boolean;
+      includeResponseBody?: boolean;
+      includeHeaders?: boolean;
+      includeTiming?: boolean;
+    }
+  ): Promise<NetworkRequestResult> {
+    const result: NetworkRequestResult = {
+      requestId: request.requestId,
+      url: request.url,
+      method: request.method,
+      status: request.status,
+      statusText: request.statusText,
+      type: request.type,
+      timestamp: request.timestamp,
+      responseTimestamp: request.responseTimestamp,
+    };
+
+    if (options.includeHeaders) {
+      result.requestHeaders = request.requestHeaders;
+      result.responseHeaders = request.responseHeaders;
+      if (request.mimeType) {
+        result.mimeType = request.mimeType;
+      }
+    }
+
+    if (options.includeTiming) {
+      result.endTimestamp = request.endTimestamp;
+      result.durationMs = request.durationMs ?? computeDurationMs(request.timestamp, request.endTimestamp);
+      result.encodedDataLength = request.encodedDataLength;
+      result.failed = request.failed;
+      result.failureReason = request.failureReason;
+      result.timing = request.timing;
+      if (request.mimeType) {
+        result.mimeType = request.mimeType;
+      }
+    }
+
+    if (options.includeRequestBody) {
+      result.requestBody = await this.getRequestBody(request);
+    }
+
+    if (options.includeResponseBody) {
+      result.responseBody = await this.getResponseBody(request);
+      if (request.mimeType) {
+        result.mimeType = request.mimeType;
+      }
+    }
+
+    return result;
+  }
+
+  private async getRequestBody(request: NetworkRequestRecord): Promise<NetworkBody> {
+    const mimeType = getMimeTypeFromHeaders(request.requestHeaders);
+
+    try {
+      const result = (await this.sendCommand('Network.getRequestPostData', {
+        requestId: request.requestId,
+      })) as { postData?: string };
+      const content = result.postData || '';
+
+      return {
+        content,
+        base64Encoded: false,
+        mimeType,
+        size: computeBodySize(content, false),
+      };
+    } catch (err) {
+      return {
+        content: '',
+        base64Encoded: false,
+        mimeType,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  private async getResponseBody(request: NetworkRequestRecord): Promise<NetworkBody> {
+    const mimeType = request.mimeType || getMimeTypeFromHeaders(request.responseHeaders);
+
+    try {
+      const result = (await this.sendCommand('Network.getResponseBody', {
+        requestId: request.requestId,
+      })) as { body?: string; base64Encoded?: boolean };
+      const content = result.body || '';
+      const base64Encoded = Boolean(result.base64Encoded);
+
+      return {
+        content,
+        base64Encoded,
+        mimeType,
+        size: computeBodySize(content, base64Encoded),
+      };
+    } catch (err) {
+      return {
+        content: '',
+        base64Encoded: false,
+        mimeType,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   // ========== Cookie Management ==========

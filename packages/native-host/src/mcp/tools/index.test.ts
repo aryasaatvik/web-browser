@@ -137,6 +137,17 @@ describe('getToolDefinitions', () => {
     expect(tools.find((t) => t.name === 'console_get')).toBeDefined();
     expect(tools.find((t) => t.name === 'network_get')).toBeDefined();
   });
+
+  it('should expose opt-in payload fields for network_get', () => {
+    const tools = getToolDefinitions();
+    const networkGet = tools.find((t) => t.name === 'network_get');
+
+    expect(networkGet).toBeDefined();
+    expect(networkGet?.inputSchema.properties).toHaveProperty('includeRequestBody');
+    expect(networkGet?.inputSchema.properties).toHaveProperty('includeResponseBody');
+    expect(networkGet?.inputSchema.properties).toHaveProperty('includeHeaders');
+    expect(networkGet?.inputSchema.properties).toHaveProperty('includeTiming');
+  });
 });
 
 describe('executeTool', () => {

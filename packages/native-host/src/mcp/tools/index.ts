@@ -475,7 +475,7 @@ export function getToolDefinitions(): ToolDefinition[] {
     // Network requests
     {
       name: 'network_get',
-      description: 'Read HTTP network requests made by the page. Useful for debugging API calls.',
+      description: 'Read HTTP network requests made by the page, with optional headers, payloads, and timing data.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -490,6 +490,22 @@ export function getToolDefinitions(): ToolDefinition[] {
           clear: {
             type: 'boolean',
             description: 'Clear requests after retrieval',
+          },
+          includeRequestBody: {
+            type: 'boolean',
+            description: 'Include captured request payloads when available',
+          },
+          includeResponseBody: {
+            type: 'boolean',
+            description: 'Include response bodies when available',
+          },
+          includeHeaders: {
+            type: 'boolean',
+            description: 'Include request and response headers',
+          },
+          includeTiming: {
+            type: 'boolean',
+            description: 'Include timing, transfer size, and failure metadata',
           },
         },
       },
